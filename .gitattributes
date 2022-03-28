@@ -20,3 +20,8 @@
 *.jpg binary
 *.ico binary
 *.bin binary
+*.zip binary
+*.7z binary 
+*.gz binary
+*.xls binary
+*.wav binary

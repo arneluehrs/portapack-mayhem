@@ -18,6 +18,8 @@
  * along with this program; see the file COPYING.  If not, write to
  * the Free Software Foundation, Inc., 51 Franklin Street,
  * Boston, MA 02110-1301, USA.
+ * 
+ * cf. http://jgsenlis.free.fr/
  */
 
 #include "ui_epirb.hpp"

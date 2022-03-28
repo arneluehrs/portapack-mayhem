@@ -18,6 +18,8 @@
  * along with this program; see the file COPYING.  If not, write to
  * the Free Software Foundation, Inc., 51 Franklin Street,
  * Boston, MA 02110-1301, USA.
+ * 
+ * cf. http://jgsenlis.free.fr/
  */
 
 #ifndef __UI_EPIRB_H__
@@ -81,10 +83,10 @@ private:
 		{ { 6 * 8, 3 * 16 }, "ID:", Color::light_grey() },
 		{ { 0 * 8, 4 * 16 }, "DateTime:", Color::light_grey() },
 
-		{ { 3 * 8, 5 * 16 }, "Vbatt:", Color::light_grey() },
+		// { { 3 * 8, 5 * 16 }, "Vbatt:", Color::light_grey() },
 		{ { 3 * 8, 6 * 16 }, "Frame:", Color::light_grey() },
-		{ { 4 * 8, 7 * 16 }, "Temp:", Color::light_grey() },
-		{ { 0 * 8, 8 * 16 }, "Humidity:", Color::light_grey() }
+		// { { 4 * 8, 7 * 16 }, "Temp:", Color::light_grey() },
+		// { { 0 * 8, 8 * 16 }, "Humidity:", Color::light_grey() }
 	};
 
 	FrequencyField field_frequency {
@@ -149,25 +151,25 @@ private:
 		"..."
 	};
 
-	Text text_voltage {
-		{ 9 * 8, 5 * 16, 10 * 8, 16 },
-		"..."
-	};
+	// Text text_voltage {
+	// 	{ 9 * 8, 5 * 16, 10 * 8, 16 },
+	// 	"..."
+	// };
 
 	Text text_frame {
 		{ 9 * 8, 6 * 16, 10 * 8, 16 },
 		"..."
 	};
 
-	Text text_temp {
-		{ 9 * 8, 7 * 16, 10 * 8, 16 },
-		"..."
-	};
+	// Text text_temp {
+	// 	{ 9 * 8, 7 * 16, 10 * 8, 16 },
+	// 	"..."
+	// };
 
-	Text text_humid {
-		{ 9 * 8, 8 * 16, 10 * 8, 16 },
-		"..."
-	};
+	// Text text_humid {
+	// 	{ 9 * 8, 8 * 16, 10 * 8, 16 },
+	// 	"..."
+	// };
 
 	GeoPos geopos {
 		{ 0, 12 * 16 },
