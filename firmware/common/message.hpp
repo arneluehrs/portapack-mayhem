@@ -1032,7 +1032,7 @@ public:
 
 class POCSAGConfigureMessage : public Message {
 public:
-	constexpr POCSAGConfigureMessage() 
+	constexpr POCSAGConfigureMessage()
 	: Message { ID::POCSAGConfigure }
 	{
 	}
