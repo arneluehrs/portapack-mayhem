@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2016 Jared Boone, ShareBrained Technology, Inc.
  * Copyright (C) 2016 Furrtek
+ * Copyright (C) 2023 Kyle Reed, zxkmm
  *
  * This file is part of PortaPack.
  *
@@ -20,157 +21,197 @@
  * Boston, MA 02110-1301, USA.
  */
 
+#define SHORT_UI true
+#define NORMAL_UI false
 
-
-#include "ui_widget.hpp"
+#include "app_settings.hpp"
+#include "bitmap.hpp"
+#include "file.hpp"
+#include "metadata_file.hpp"
+#include "radio_state.hpp"
+#include "replay_thread.hpp"
 #include "ui_navigation.hpp"
 #include "ui_receiver.hpp"
-#include "replay_thread.hpp"
 #include "ui_spectrum.hpp"
+#include "ui_transmitter.hpp"
+#include "ui_widget.hpp"
 
 #include <string>
 #include <memory>
-#include <deque>
+#include <vector>
 
 namespace ui {
 
 class PlaylistView : public View {
-public:
-	PlaylistView(NavigationView& nav);
-	~PlaylistView();
+   public:
+    PlaylistView(NavigationView& nav);
+    PlaylistView(NavigationView& nav, const std::filesystem::path& path);
+    ~PlaylistView();
 
-	void on_hide() override;
-	void set_parent_rect(const Rect new_parent_rect) override;
-	void focus() override;
+    // Following 2 called by 'NavigationView::update_view' after view is created.
+    void set_parent_rect(Rect new_parent_rect) override;
+    void focus() override;
+    void on_hide() override;
 
-	std::string title() const override { return "Playlist"; };
-	
-private:
-	NavigationView& nav_;
-	
-	static constexpr ui::Dim header_height = 3 * 16;
-	
-	struct playlist_entry {
-		rf::Frequency replay_frequency { 0 };
-		std::string replay_file{};
-		uint32_t sample_rate{};
-		uint32_t next_delay{};
-	};
-	std::deque<playlist_entry> playlist_db{};
-	std::deque<playlist_entry> playlist_masterdb{};
-	uint32_t sample_rate = 0;
-	int32_t tx_gain { 47 };
-	bool rf_amp { true }; // aux private var to store temporal, Replay App rf_amp user selection.
-	static constexpr uint32_t baseband_bandwidth = 2500000;
-	const size_t read_size { 16384 };
-	const size_t buffer_count { 3 };
-	void load_file(std::filesystem::path playlist_path);
-	void txtline_process(std::string &);
-	void on_file_changed(std::filesystem::path new_file_path, rf::Frequency replay_frequency, uint32_t replay_sample_rate);
-	void on_target_frequency_changed(rf::Frequency f);
-	void on_tx_progress(const uint32_t progress);
-	
-	void set_target_frequency(const rf::Frequency new_value);
-	rf::Frequency target_frequency() const;
+    std::string title() const override { return "Replay"; };
 
-	void toggle();
-	void start();
-	void stop(const bool do_loop);
-	bool is_active() const;
-	bool loop() const;
-	void set_ready();
-	void handle_replay_thread_done(const uint32_t return_code);
-	void file_error();
+   private:
+    NavigationView& nav_;
+    TxRadioState radio_state_{};
+    app_settings::SettingsManager settings_{
+        "tx_playlist", app_settings::Mode::TX};
 
-	std::filesystem::path file_path { };
-	std::unique_ptr<ReplayThread> replay_thread { };
-	bool ready_signal { false };
+    // More header == less spectrum view.
+    static constexpr ui::Dim header_height = 6 * 16;
+    static constexpr uint32_t baseband_bandwidth = 2500000;
 
-	Labels labels {
-		{ { 10 * 8, 2 * 16 }, "GAIN   A:", Color::light_grey() }
-	};
-	
-	Button button_open {
-		{ 0 * 8, 0 * 16, 10 * 8, 2 * 16 },
-		"Open file"
-	};
+    struct playlist_entry {
+        std::filesystem::path path{};
+        capture_metadata metadata{};
+        File::Size file_size{};
+        uint32_t ms_delay{};
+    };
 
-	
-	Text text_filename {
-		{ 11 * 8, 0 * 16, 12 * 8, 16 },
-		"-"
-	};
-	Text text_sample_rate {
-		{ 24 * 8, 0 * 16, 6 * 8, 16 },
-		"-"
-	};
-	
-	Text text_duration {
-		{ 11 * 8, 1 * 16, 6 * 8, 16 },
-		"-"
-	};
-	ProgressBar progressbar {
-		{ 18 * 8, 1 * 16, 12 * 8, 16 }
-	};
-	
-	FrequencyField field_frequency {
-		{ 0 * 8, 2 * 16 },
-	};
-	
-	NumberField field_rfgain {
-		{ 14 * 8, 2 * 16 },
-		2,
-		{ 0, 47 },
-		1,
-		' '	
-	};
-	NumberField field_rfamp {     // previously  I was using "RFAmpField field_rf_amp" but that is general Receiver amp setting.
-		{ 19 * 8, 2 * 16 },
-		2,
-		{ 0, 14 },                // this time we will display GUI , 0 or 14 dBs same as Mic App
-		14,
-		' '
-	};
-	Checkbox check_loop {
-		{ 21 * 8, 2 * 16 },
-		4,
-		"Loop",
-		true
-	};
-	ImageButton button_play {
-		{ 28 * 8, 2 * 16, 2 * 8, 1 * 16 },
-		&bitmap_play,
-		Color::green(),
-		Color::black()
-	};
+    std::unique_ptr<ReplayThread> replay_thread_{};
+    bool ready_signal_{};  // Used to signal the ReplayThread.
 
-	spectrum::WaterfallWidget waterfall { };
+    size_t current_index_{0};
+    bool playlist_dirty_{};
+    std::vector<playlist_entry> playlist_db_{};
+    std::filesystem::path playlist_path_{};
 
-	MessageHandlerRegistration message_handler_replay_thread_error {
-		Message::ID::ReplayThreadDone,
-		[this](const Message* const p) {
-			const auto message = *reinterpret_cast<const ReplayThreadDoneMessage*>(p);
-			this->handle_replay_thread_done(message.return_code);
-		}
-	};
-	
-	MessageHandlerRegistration message_handler_fifo_signal {
-		Message::ID::RequestSignal,
-		[this](const Message* const p) {
-			const auto message = static_cast<const RequestSignalMessage*>(p);
-			if (message->signal == RequestSignalMessage::Signal::FillRequest) {
-				this->set_ready();
-			}
-		}
-	};
-	
-	MessageHandlerRegistration message_handler_tx_progress {
-		Message::ID::TXProgress,
-		[this](const Message* const p) {
-			const auto message = *reinterpret_cast<const TXProgressMessage*>(p);
-			this->on_tx_progress(message.progress);
-		}
-	};
+    void load_file(const std::filesystem::path& path);
+    Optional<playlist_entry> load_entry(std::filesystem::path&& path);
+    void on_file_changed(const std::filesystem::path& path);
+    void open_file(bool prompt_save = true);
+    void save_file(bool show_dialogs = true);
+    void add_entry(std::filesystem::path&& path);
+    void delete_entry();
+    void reset();
+    void show_file_error(
+        const std::filesystem::path& path,
+        const std::string& message);
+
+    playlist_entry* current();
+
+    bool is_active() const;
+    bool at_end() const;
+
+    void toggle();
+    void start();
+    bool next_track();
+    void send_current_track();
+    void stop();
+
+    void update_ui();
+
+    /* There are called by Message handlers. */
+    void on_tx_progress(uint32_t progress);
+    void handle_replay_thread_done(uint32_t return_code);
+
+    Text text_filename{
+        {0 * 8, 0 * 16, 30 * 8, 16}};
+
+    FrequencyField field_frequency{
+        {0 * 8, 1 * 16}};
+
+    Text text_sample_rate{
+        {10 * 8, 1 * 16, 7 * 8, 16}};
+
+    /*v making there's 1px line (instead of two) between two progress bars,
+     * by letting 1px overlapped.
+     * So, since they overlapped 1px, they are visually same, and looks better.
+     */
+
+    ProgressBar progressbar_track{
+        {18 * 8, 1 * 16, 12 * 8, 8 + 1}};
+
+    ProgressBar progressbar_transmit{
+        {18 * 8, 3 * 8 - 1, 12 * 8, 8}};
+
+    Text text_duration{
+        {0 * 8, 2 * 16, 5 * 8, 16}};
+
+    // TODO: delay duration field.
+
+    TransmitterView2 tx_view{
+        9 * 8, 1 * 8, SHORT_UI};
+
+    Checkbox check_loop{
+        {21 * 8, 2 * 16},
+        4,
+        "Loop",
+        true};
+
+    ImageButton button_play{
+        {28 * 8, 2 * 16, 2 * 8, 1 * 16},
+        &bitmap_play,
+        Color::green(),
+        Color::black()};
+
+    Text text_track{
+        {0 * 8, 3 * 16, 30 * 8, 16}};
+
+    NewButton button_prev{
+        {2 * 8, 4 * 16, 4 * 8, 2 * 16},
+        "",
+        &bitmap_arrow_left,
+        Color::dark_grey()};
+
+    NewButton button_next{
+        {6 * 8, 4 * 16, 4 * 8, 2 * 16},
+        "",
+        &bitmap_arrow_right,
+        Color::dark_grey()};
+
+    NewButton button_add{
+        {11 * 8, 4 * 16, 4 * 8, 2 * 16},
+        "",
+        &bitmap_icon_new_file,
+        Color::orange()};
+
+    NewButton button_delete{
+        {15 * 8, 4 * 16, 4 * 8, 2 * 16},
+        "",
+        &bitmap_icon_delete,
+        Color::orange()};
+
+    NewButton button_open{
+        {20 * 8, 4 * 16, 4 * 8, 2 * 16},
+        "",
+        &bitmap_icon_load,
+        Color::dark_blue()};
+
+    NewButton button_save{
+        {24 * 8, 4 * 16, 4 * 8, 2 * 16},
+        "",
+        &bitmap_icon_save,
+        Color::dark_blue()};
+
+    spectrum::WaterfallView waterfall{};
+
+    MessageHandlerRegistration message_handler_replay_thread_error{
+        Message::ID::ReplayThreadDone,
+        [this](const Message* p) {
+            auto message = *reinterpret_cast<const ReplayThreadDoneMessage*>(p);
+            handle_replay_thread_done(message.return_code);
+        }};
+
+    MessageHandlerRegistration message_handler_fifo_signal{
+        Message::ID::RequestSignal,
+        [this](const Message* p) {
+            auto message = static_cast<const RequestSignalMessage*>(p);
+            if (message->signal == RequestSignalMessage::Signal::FillRequest) {
+                ready_signal_ = true;
+            }
+        }};
+
+    MessageHandlerRegistration message_handler_tx_progress{
+        Message::ID::TXProgress,
+        [this](const Message* p) {
+            auto message = *reinterpret_cast<const TXProgressMessage*>(p);
+            on_tx_progress(message.progress);
+        }};
 };
 
 } /* namespace ui */

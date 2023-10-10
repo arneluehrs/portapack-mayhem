@@ -23,17 +23,86 @@
 
 #include "utility.hpp"
 
+// Returns TRUE if button state changed (after debouncing)
 bool Debounce::feed(const uint8_t bit) {
-	history_ = (history_ << 1) | (bit & 1);
+    history_ = (history_ << 1) | (bit & 1);
 
-	if( history_ == 0b00001111 ) {
-		state_ = 1;
-		return true;
-	}
-	if( history_ == 0b11110000 ) {
-		state_ = 0;
-		return true;
-	}
+    // "Repeat" handling - simulated button release
+    if (repeat_ctr_) {
+        // Make sure the button is still being held continuously
+        if ((history_ == 0xFF) && !long_press_enabled_) {
+            // Simulate button press every REPEAT_SUBSEQUENT_DELAY ticks
+            if (--repeat_ctr_ == 0) {
+                state_ = !state_;
+                repeat_ctr_ = REPEAT_SUBSEQUENT_DELAY / 2;
+                return true;
+            }
+        } else {
+            // It's a real button release; stop simulating
+            repeat_ctr_ = 0;
+        }
+    }
 
-	return false;
+    if (state_ == 0) {
+        // Previous button state was 0 (released);
+        // Has button been held for DEBOUNCE_COUNT ticks?
+        if ((history_ & DEBOUNCE_MASK) == DEBOUNCE_MASK) {
+            state_ = 1;
+            held_time_ = 0;
+
+            // If long_press_enabled_, state() function masks the button press until it's released
+            // or until LONG_PRESS_DELAY is reached
+            if (long_press_enabled_) {
+                pulse_upon_release_ = true;
+                return false;
+            }
+            return true;
+        }
+    } else {
+        // Previous button state was 1 (pressed);
+        // Has button been released for DEBOUNCE_COUNT ticks?
+        if ((history_ & DEBOUNCE_MASK) == 0) {
+            // Button has been released when long_press_enabled_ and before LONG_PRESS_DELAY was reached;
+            // allow state() function to finally return a single press indication
+            // (in long press mode, apps won't see button press until the button is released)
+            if (pulse_upon_release_) {
+                // leaving state_==1 for one cycle
+                pulse_upon_release_ = 0;
+            } else {
+                state_ = 0;
+            }
+
+            // Reset long_press_occurred_ flag after button is released
+            long_press_occurred_ = false;
+            return true;
+        }
+
+        // Has button been held continuously?
+        if (history_ == 0xFF) {
+            held_time_++;
+            if (pulse_upon_release_) {
+                // Button is being held down and long_press support is enabled for this key:
+                // if LONG_PRESS_DELAY is reached then finally report that switch is pressed and set flag
+                // indicating it was a LONG press
+                // (note that repease_support and long_press support are mutually exclusive)
+                if (held_time_ == LONG_PRESS_DELAY) {
+                    long_press_occurred_ = true;
+                    pulse_upon_release_ = 0;
+                    held_time_ = 0;
+                    return true;
+                }
+            } else if (repeat_enabled_ && !long_press_enabled_) {
+                // Repeat support -- 4 directional buttons only (unless long_press is enabled)
+                if (held_time_ == REPEAT_INITIAL_DELAY) {
+                    // Delay reached; trigger repeat code on NEXT tick
+                    repeat_ctr_ = 1;
+                    held_time_ = 0;
+                }
+            }
+        } else {
+            // Button not continuously pressed; reset counter
+            held_time_ = 0;
+        }
+    }
+    return false;
 }

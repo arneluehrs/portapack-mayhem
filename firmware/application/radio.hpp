@@ -27,16 +27,19 @@
 #include <cstdint>
 #include <cstddef>
 
+/* Direct access to the radio. Setting values incorrectly can damage
+ * the device. Applications should use ReceiverModel or TransmitterModel
+ * instead of calling these functions directly. */
 namespace radio {
 
 struct Configuration {
-	rf::Frequency tuning_frequency;
-	uint32_t baseband_rate;
-	uint32_t baseband_filter_bandwidth;
-	rf::Direction direction;
-	bool rf_amp;
-	int8_t lna_gain;
-	int8_t vga_gain;
+    rf::Frequency tuning_frequency;
+    uint32_t baseband_rate;
+    uint32_t baseband_filter_bandwidth;
+    rf::Direction direction;
+    bool rf_amp;
+    int8_t lna_gain;
+    int8_t vga_gain;
 };
 
 void init();
@@ -51,8 +54,9 @@ void set_baseband_filter_bandwidth(const uint32_t bandwidth_minimum);
 void set_baseband_rate(const uint32_t rate);
 void set_antenna_bias(const bool on);
 
-void enable(Configuration configuration);
-void configure(Configuration configuration);
+/* Use ReceiverModel or TransmitterModel instead. */
+// void enable(Configuration configuration);
+// void configure(Configuration configuration);
 void disable();
 
 namespace debug {
@@ -76,4 +80,4 @@ uint8_t temp_sense();
 
 } /* namespace radio */
 
-#endif/*__RADIO_H__*/
+#endif /*__RADIO_H__*/

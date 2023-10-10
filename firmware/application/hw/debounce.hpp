@@ -24,17 +24,46 @@
 
 #include <cstdint>
 
-class Debounce {
-public:
-	bool feed(const uint8_t bit);
-	
-	uint8_t state() const {
-		return state_;
-	}
+// consecutive # of times button input must be same (<=8)
+#define DEBOUNCE_COUNT 4
+#define DEBOUNCE_MASK ((1 << DEBOUNCE_COUNT) - 1)
 
-private:
-	uint8_t history_ { 0 };
-	uint8_t state_ { 0 };
+// # of timer0 ticks before a held button starts being counted as repeated presses
+#define REPEAT_INITIAL_DELAY 250
+#define REPEAT_SUBSEQUENT_DELAY 92
+#define LONG_PRESS_DELAY 1000
+
+class Debounce {
+   public:
+    bool feed(const uint8_t bit);
+
+    uint8_t state() const {
+        return (pulse_upon_release_) ? 0 : state_;
+    }
+
+    void enable_repeat() {
+        repeat_enabled_ = true;
+    }
+
+    void set_long_press_support(bool v) {
+        long_press_enabled_ = v;
+    }
+
+    bool long_press_occurred() {
+        bool v = long_press_occurred_;
+        long_press_occurred_ = false;
+        return v;
+    }
+
+   private:
+    uint8_t history_{0};
+    uint8_t state_{0};
+    bool repeat_enabled_{0};
+    uint16_t repeat_ctr_{0};
+    uint16_t held_time_{0};
+    bool pulse_upon_release_{0};
+    bool long_press_enabled_{0};
+    bool long_press_occurred_{0};
 };
 
-#endif/*__DEBOUNCE_H__*/
+#endif /*__DEBOUNCE_H__*/

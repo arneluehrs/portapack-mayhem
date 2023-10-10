@@ -33,6 +33,7 @@
 #include "ui_channel.hpp"
 #include "ui_audio.hpp"
 #include "ui_sd_card_status_view.hpp"
+#include "ui_dfu_menu.hpp"
 
 #include "bitmap.hpp"
 #include "ff.h"
@@ -45,305 +46,351 @@
 
 using namespace sd_card;
 
-namespace ui
-{
+namespace ui {
 
-	enum modal_t
-	{
-		INFO = 0,
-		YESNO,
-		YESCANCEL,
-		ABORT
-	};
+enum modal_t {
+    INFO = 0,
+    YESNO,
+    YESCANCEL,
+    ABORT
+};
 
-	class NavigationView : public View
-	{
-	public:
-		std::function<void(const View &)> on_view_changed{};
+class NavigationView : public View {
+   public:
+    std::function<void(const View&)> on_view_changed{};
 
-		NavigationView() = default;
+    NavigationView() = default;
 
-		NavigationView(const NavigationView &) = delete;
-		NavigationView(NavigationView &&) = delete;
-		NavigationView &operator=(const NavigationView &) = delete;
-		NavigationView &operator=(NavigationView &&) = delete;
+    NavigationView(const NavigationView&) = delete;
+    NavigationView(NavigationView&&) = delete;
+    NavigationView& operator=(const NavigationView&) = delete;
+    NavigationView& operator=(NavigationView&&) = delete;
 
-		bool is_top() const;
+    bool is_top() const;
 
-		template <class T, class... Args>
-		T *push(Args &&...args)
-		{
-			return reinterpret_cast<T *>(push_view(std::unique_ptr<View>(new T(*this, std::forward<Args>(args)...))));
-		}
-		template <class T, class... Args>
-		T *replace(Args &&...args)
-		{
-			pop();
-			return reinterpret_cast<T *>(push_view(std::unique_ptr<View>(new T(*this, std::forward<Args>(args)...))));
-		}
+    template <class T, class... Args>
+    T* push(Args&&... args) {
+        return reinterpret_cast<T*>(push_view(std::unique_ptr<View>(new T(*this, std::forward<Args>(args)...))));
+    }
 
-		void push(View *v);
-		void replace(View *v);
+    // Pushes a new view under the current on the stack so the current view returns into this new one.
+    template <class T, class... Args>
+    T* push_under_current(Args&&... args) {
+        auto new_view = std::unique_ptr<View>(new T(*this, std::forward<Args>(args)...));
+        auto new_view_ptr = new_view.get();
+        view_stack.insert(view_stack.end() - 1, ViewState{std::move(new_view), {}});
+        return reinterpret_cast<T*>(new_view_ptr);
+    }
 
-		void pop();
-		void pop_modal();
+    template <class T, class... Args>
+    T* replace(Args&&... args) {
+        pop();
+        return reinterpret_cast<T*>(push_view(std::unique_ptr<View>(new T(*this, std::forward<Args>(args)...))));
+    }
 
-		void display_modal(const std::string &title, const std::string &message);
-		void display_modal(const std::string &title, const std::string &message, const modal_t type, const std::function<void(bool)> on_choice = nullptr);
+    void push(View* v);
+    void replace(View* v);
 
-		void focus() override;
+    void pop();
+    void pop_modal();
 
-	private:
-		std::vector<std::unique_ptr<View>> view_stack{};
-		Widget *modal_view{nullptr};
+    void display_modal(const std::string& title, const std::string& message);
+    void display_modal(const std::string& title, const std::string& message, const modal_t type, const std::function<void(bool)> on_choice = nullptr);
 
-		Widget *view() const;
+    void focus() override;
 
-		void free_view();
-		void update_view();
-		View *push_view(std::unique_ptr<View> new_view);
-	};
+    /* Sets the 'on_pop' handler for the current view.
+     * Returns true if the handler was bound successfully. */
+    bool set_on_pop(std::function<void()> on_pop);
 
-	class SystemStatusView : public View
-	{
-	public:
-		std::function<void(void)> on_back{};
+   private:
+    struct ViewState {
+        std::unique_ptr<View> view;
+        std::function<void()> on_pop;
+    };
 
-		SystemStatusView(NavigationView &nav);
+    std::vector<ViewState> view_stack{};
+    Widget* modal_view{nullptr};
 
-		void set_back_enabled(bool new_value);
-		void set_title_image_enabled(bool new_value);
-		void set_title(const std::string new_value);
+    Widget* view() const;
 
-	private:
-		static constexpr auto default_title = "";
+    void pop(bool update);
+    void free_view();
+    void update_view();
+    View* push_view(std::unique_ptr<View> new_view);
+};
 
-		NavigationView &nav_;
+/* Holds widgets and grows dynamically toward the left.
+ * 16px tall fixed and right-aligns all children in the
+ * order in which they were added. */
+// TODO: Could make this a generic "StackPanel" control.
+class StatusTray : public View {
+   public:
+    StatusTray(Point pos);
 
-		Rectangle backdrop{
-			{0 * 8, 0 * 16, 240, 16},
-			Color::dark_grey()};
+    StatusTray(const StatusTray&) = delete;
+    StatusTray& operator=(const StatusTray&) = delete;
 
-		ImageButton button_back{
-			{2, 0 * 16, 16, 16},
-			&bitmap_icon_previous,
-			Color::white(),
-			Color::dark_grey()};
+    void add_button(ImageButton* child);
+    void add(Widget* child);
+    void update_layout();
+    void clear();
+    void paint(Painter& painter) override;
+    uint8_t width() { return width_; };
 
-		Text title{
-			{20, 0, 14 * 8, 1 * 16},
-			default_title,
-		};
+   private:
+    static constexpr uint8_t height = 16;
+    // This control grow to the left, so keep
+    // track of the right edge.
+    const Point pos_{};
+    uint8_t width_{};
+};
 
-		ImageButton button_title{
-			{2, 0, 80, 16},
-			&bitmap_titlebar_image,
-			Color::white(),
-			Color::dark_grey()};
+class SystemStatusView : public View {
+   public:
+    std::function<void(void)> on_back{};
 
-		ImageButton button_speaker{
-			{17 * 8, 0, 2 * 8, 1 * 16},
-			&bitmap_icon_speaker_mute,
-			Color::light_grey(),
-			Color::dark_grey()};
+    SystemStatusView(NavigationView& nav);
 
-		ImageButton button_stealth{
-			{19 * 8, 0, 2 * 8, 1 * 16},
-			&bitmap_icon_stealth,
-			Color::light_grey(),
-			Color::dark_grey()};
+    void set_back_enabled(bool new_value);
+    void set_title_image_enabled(bool new_value);
+    void set_title(const std::string new_value);
 
-		/*ImageButton button_textentry {
-		{ 170, 0, 2 * 8, 1 * 16 },
-		&bitmap_icon_unistroke,
-		Color::white(),
-		Color::dark_grey()
-	};*/
+   private:
+    static constexpr auto default_title = "";
 
-		ImageButton button_camera{
-			{21 * 8, 0, 2 * 8, 1 * 16},
-			&bitmap_icon_camera,
-			Color::white(),
-			Color::dark_grey()};
+    NavigationView& nav_;
 
-		ImageButton button_sleep{
-			{23 * 8, 0, 2 * 8, 1 * 16},
-			&bitmap_icon_sleep,
-			Color::white(),
-			Color::dark_grey()};
+    Rectangle backdrop{
+        {0 * 8, 0 * 16, ui::screen_width, 16},
+        Color::dark_grey()};
 
-		ImageButton button_bias_tee{
-			{25 * 8, 0, 12, 1 * 16},
-			&bitmap_icon_biast_off,
-			Color::light_grey(),
-			Color::dark_grey()};
+    ImageButton button_back{
+        {0, 0 * 16, 12 * 8, 16},  // Back button also covers the title for easier touch.
+        &bitmap_icon_previous,
+        Color::white(),
+        Color::dark_grey()};
 
-		ImageButton button_clock_status{
-			{27 * 8, 0 * 16, 2 * 8, 1 * 16},
-			&bitmap_icon_clk_int,
-			Color::light_grey(),
-			Color::dark_grey()};
+    Text title{
+        {20, 0, 14 * 8, 1 * 16},
+        default_title,
+    };
 
-		SDCardStatusView sd_card_status_view{
-			{28 * 8, 0 * 16, 2 * 8, 1 * 16}};
+    ImageButton button_title{
+        {2, 0, 80, 16},
+        &bitmap_titlebar_image,
+        Color::white(),
+        Color::dark_grey()};
 
-		void on_speaker();
-		void on_stealth();
-		void on_bias_tee();
-		// void on_textentry();
-		void on_camera();
-		void on_title();
-		void refresh();
-		void on_clk();
+    StatusTray status_icons{{screen_width, 0}};
 
-		MessageHandlerRegistration message_handler_refresh{
-			Message::ID::StatusRefresh,
-			[this](const Message *const p)
-			{
-				(void)p;
-				this->refresh();
-			}};
-	};
+    ImageToggle toggle_speaker{
+        {0, 0, 2 * 8, 1 * 16},
+        &bitmap_icon_speaker_mute,
+        &bitmap_icon_speaker,
+        Color::light_grey(),
+        Color::dark_grey(),
+        Color::green(),
+        Color::dark_grey()};
 
-	class InformationView : public View
-	{
-	public:
-		InformationView(NavigationView &nav);
-		void refresh();
+    ImageToggle toggle_mute{
+        {0, 0, 2 * 8, 1 * 16},
+        &bitmap_icon_speaker_and_headphones_mute,
+        &bitmap_icon_speaker_and_headphones,
+        Color::light_grey(),
+        Color::dark_grey(),
+        Color::green(),
+        Color::dark_grey()};
 
-	private:
-		// static constexpr auto version_string = "v1.4.4"; // This is commented out as we are now setting the version via ENV (VERSION_STRING=v1.0.0)
-		NavigationView &nav_;
+    ImageButton button_converter{
+        {0, 0, 2 * 8, 1 * 16},
+        &bitmap_icon_upconvert,
+        Color::light_grey(),
+        Color::dark_grey()};
 
-		Rectangle backdrop{
-			{0, 0 * 16, 240, 16},
-			{33, 33, 33}};
+    ImageToggle toggle_stealth{
+        {0, 0, 2 * 8, 1 * 16},
+        &bitmap_icon_stealth};
 
-		Text version{
-			{2, 0, 11 * 8, 16},
-			VERSION_STRING};
+    ImageButton button_camera{
+        {0, 0, 2 * 8, 1 * 16},
+        &bitmap_icon_camera,
+        Color::white(),
+        Color::dark_grey()};
 
-		LiveDateTime ltime{
-			{86, 0, 19 * 8, 16}};
-	};
+    ImageButton button_sleep{
+        {0, 0, 2 * 8, 1 * 16},
+        &bitmap_icon_sleep,
+        Color::white(),
+        Color::dark_grey()};
 
-	class BMPView : public View
-	{
-	public:
-		BMPView(NavigationView &nav);
-		void paint(Painter &) override;
-		void focus() override;
+    ImageButton button_bias_tee{
+        {0, 0, 2 * 8, 1 * 16},
+        &bitmap_icon_biast_off,
+        Color::light_grey(),
+        Color::dark_grey()};
 
-	private:
-		Text text_info{
-			{4 * 8, 284, 20 * 8, 16},
-			"Version " VERSION_STRING};
+    ImageButton button_clock_status{
+        {0, 0 * 16, 8, 1 * 16},
+        &bitmap_icon_clk_int,
+        Color::light_grey(),
+        Color::dark_grey()};
 
-		Button button_done{
-			{240, 0, 1, 1},
-			""};
-	};
+    SDCardStatusView sd_card_status_view{
+        {0, 0 * 16, 2 * 8, 1 * 16}};
 
-	class ReceiversMenuView : public BtnGridView
-	{
-	public:
-		ReceiversMenuView(NavigationView &nav);
-		std::string title() const override { return "Receive"; };
-	};
+    void on_converter();
+    void on_bias_tee();
+    void on_camera();
+    void on_title();
+    void refresh();
+    void on_clk();
 
-	class TransmittersMenuView : public BtnGridView
-	{
-	public:
-		TransmittersMenuView(NavigationView &nav);
-		std::string title() const override { return "Transmit"; };
-	};
+    MessageHandlerRegistration message_handler_refresh{
+        Message::ID::StatusRefresh,
+        [this](const Message* const p) {
+            (void)p;
+            this->refresh();
+        }};
+};
 
-	class UtilitiesMenuView : public BtnGridView
-	{
-	public:
-		UtilitiesMenuView(NavigationView &nav);
-		std::string title() const override { return "Utilities"; };
-	};
+class InformationView : public View {
+   public:
+    InformationView(NavigationView& nav);
+    void refresh();
 
-	class SystemMenuView : public BtnGridView
-	{
-	public:
-		SystemMenuView(NavigationView &nav);
+   private:
+    // static constexpr auto version_string = "v1.4.4"; // This is commented out as we are now setting the version via ENV (VERSION_STRING=v1.0.0)
+    NavigationView& nav_;
 
-	private:
-		void hackrf_mode(NavigationView &nav);
-	};
+    Rectangle backdrop{
+        {0, 0 * 16, 240, 16},
+        {33, 33, 33}};
 
-	class SystemView : public View
-	{
-	public:
-		SystemView(
-			Context &context,
-			const Rect parent_rect);
+    Text version{
+        {2, 0, 11 * 8, 16},
+        VERSION_STRING};
 
-		Context &context() const override;
+    LiveDateTime ltime{
+        {86, 0, 19 * 8, 16}};
+};
 
-	private:
-		SystemStatusView status_view{navigation_view};
-		InformationView info_view{navigation_view};
-		NavigationView navigation_view{};
-		Context &context_;
-	};
+class BMPView : public View {
+   public:
+    BMPView(NavigationView& nav);
+    void paint(Painter&) override;
+    void focus() override;
 
-	/*class NotImplementedView : public View {
+   private:
+    Text text_info{
+        {4 * 8, 284, 20 * 8, 16},
+        "Version " VERSION_STRING};
+
+    Button button_done{
+        {240, 0, 1, 1},
+        ""};
+};
+
+class ReceiversMenuView : public BtnGridView {
+   public:
+    ReceiversMenuView(NavigationView& nav);
+    std::string title() const override { return "Receive"; };
+};
+
+class TransmittersMenuView : public BtnGridView {
+   public:
+    TransmittersMenuView(NavigationView& nav);
+    std::string title() const override { return "Transmit"; };
+};
+
+class UtilitiesMenuView : public BtnGridView {
+   public:
+    UtilitiesMenuView(NavigationView& nav);
+    std::string title() const override { return "Utilities"; };
+};
+
+class SystemMenuView : public BtnGridView {
+   public:
+    SystemMenuView(NavigationView& nav);
+
+   private:
+    void hackrf_mode(NavigationView& nav);
+};
+
+class SystemView : public View {
+   public:
+    SystemView(
+        Context& context,
+        const Rect parent_rect);
+
+    Context& context() const override;
+    void toggle_overlay();
+    void paint_overlay();
+
+   private:
+    uint8_t overlay_active{0};
+
+    SystemStatusView status_view{navigation_view};
+    InformationView info_view{navigation_view};
+    DfuMenu overlay{navigation_view};
+    DfuMenu2 overlay2{navigation_view};
+    NavigationView navigation_view{};
+    Context& context_;
+};
+
+/*class NotImplementedView : public View {
 public:
-	NotImplementedView(NavigationView& nav);
+        NotImplementedView(NavigationView& nav);
 
-	void focus() override;
+        void focus() override;
 
 private:
-	Text text_title {
-		{ 5 * 8, 7 * 16, 19 * 8, 16 },
-		"Not Yet Implemented"
-	};
+        Text text_title {
+                { 5 * 8, 7 * 16, 19 * 8, 16 },
+                "Not Yet Implemented"
+        };
 
-	Button button_done {
-		{ 10 * 8, 13 * 16, 10 * 8, 24 },
-		"Bummer",
-	};
+        Button button_done {
+                { 10 * 8, 13 * 16, 10 * 8, 24 },
+                "Bummer",
+        };
 };*/
 
-	class ModalMessageView : public View
-	{
-	public:
-		ModalMessageView(
-			NavigationView &nav,
-			const std::string &title,
-			const std::string &message,
-			const modal_t type,
-			const std::function<void(bool)> on_choice);
+class ModalMessageView : public View {
+   public:
+    ModalMessageView(
+        NavigationView& nav,
+        const std::string& title,
+        const std::string& message,
+        const modal_t type,
+        const std::function<void(bool)> on_choice);
 
-		void paint(Painter &painter) override;
-		void focus() override;
+    void paint(Painter& painter) override;
+    void focus() override;
 
-		std::string title() const override { return title_; };
+    std::string title() const override { return title_; };
 
-	private:
-		const std::string title_;
-		const std::string message_;
-		const modal_t type_;
-		const std::function<void(bool)> on_choice_;
+   private:
+    const std::string title_;
+    const std::string message_;
+    const modal_t type_;
+    const std::function<void(bool)> on_choice_;
 
-		Button button_ok{
-			{10 * 8, 14 * 16, 10 * 8, 48},
-			"OK",
-		};
+    Button button_ok{
+        {10 * 8, 14 * 16, 10 * 8, 48},
+        "OK",
+    };
 
-		Button button_yes{
-			{5 * 8, 14 * 16, 8 * 8, 48},
-			"YES",
-		};
+    Button button_yes{
+        {5 * 8, 14 * 16, 8 * 8, 48},
+        "YES",
+    };
 
-		Button button_no{
-			{17 * 8, 14 * 16, 8 * 8, 48},
-			"NO",
-		};
-	};
+    Button button_no{
+        {17 * 8, 14 * 16, 8 * 8, 48},
+        "NO",
+    };
+};
 
 } /* namespace ui */
 

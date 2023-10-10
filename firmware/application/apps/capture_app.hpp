@@ -26,94 +26,79 @@
 #include "ui_widget.hpp"
 #include "ui_navigation.hpp"
 #include "ui_receiver.hpp"
+#include "ui_freq_field.hpp"
 #include "ui_record_view.hpp"
 #include "ui_spectrum.hpp"
+#include "app_settings.hpp"
+#include "radio_state.hpp"
+#include "freqman.hpp"
 
 namespace ui {
 
 class CaptureAppView : public View {
-public:
-	CaptureAppView(NavigationView& nav);
-	~CaptureAppView();
+   public:
+    CaptureAppView(NavigationView& nav);
+    ~CaptureAppView();
 
-	void on_hide() override;
+    void on_hide() override;
+    void focus() override;
+    void set_parent_rect(const Rect new_parent_rect) override;
 
-	void set_parent_rect(const Rect new_parent_rect) override;
+    std::string title() const override { return "Capture"; };
 
-	void focus() override;
+   private:
+    static constexpr ui::Dim header_height = 3 * 16;
 
-	std::string title() const override { return "Capture"; };
+    NavigationView& nav_;
+    RxRadioState radio_state_{ReceiverModel::Mode::Capture};
+    app_settings::SettingsManager settings_{
+        "rx_capture", app_settings::Mode::RX,
+        app_settings::Options::UseGlobalTargetFrequency};
 
-private:
-	static constexpr ui::Dim header_height = 3 * 16;
+    uint32_t sampling_rate = 0;
 
-	uint32_t sampling_rate = 0;
-	uint32_t anti_alias_baseband_bandwidth_filter = 2500000; // we rename the previous var , and change type static constexpr to normal var.
+    Labels labels{
+        {{0 * 8, 1 * 16}, "Rate:", Color::light_grey()},
+    };
 
-	void on_tuning_frequency_changed(rf::Frequency f);
+    RSSI rssi{
+        {24 * 8, 0, 6 * 8, 4}};
 
-	Labels labels {
-		{ { 0 * 8, 1 * 16 }, "Rate:", Color::light_grey() },
-	};
-	
-	RSSI rssi {
-		{ 24 * 8, 0, 6 * 8, 4 },
-	};
+    Channel channel{
+        {24 * 8, 5, 6 * 8, 4}};
 
-	Channel channel {
-		{ 24 * 8, 5, 6 * 8, 4 },
-	};
+    RxFrequencyField field_frequency{
+        {0 * 8, 0 * 16},
+        nav_};
 
-	FrequencyField field_frequency {
-		{ 0 * 8, 0 * 16 },
-	};
-	
-	FrequencyStepView field_frequency_step {
-		{ 10 * 8, 0 * 16 },
-	};
+    FrequencyStepView field_frequency_step{
+        {10 * 8, 0 * 16}};
 
-	RFAmpField field_rf_amp {
-		{ 16 * 8, 0 * 16 }
-	};
+    RFAmpField field_rf_amp{
+        {16 * 8, 0 * 16}};
 
-	LNAGainField field_lna {
-		{ 18 * 8, 0 * 16 }
-	};
+    LNAGainField field_lna{
+        {18 * 8, 0 * 16}};
 
-	VGAGainField field_vga {
-		{ 21 * 8, 0 * 16 }
-	};
+    VGAGainField field_vga{
+        {21 * 8, 0 * 16}};
 
-	OptionsField option_bandwidth {
-		{ 5 * 8, 1 * 16 },
-		5,
-		{
-			{ "  8k5", 8500 },
-			{ " 11k ", 11000 },
-			{ " 16k ", 16000 },
-			{ " 25k ", 25000 },
-			{ " 50k ", 50000 },
-			{ "100k ", 100000 },
-			{ "250k ", 250000 },
-			{ "500k ", 500000 },   // Previous Limit bandwith Option with perfect micro SD write .C16 format operaton.
-			{ "600k ", 600000 },   // That extended option is still possible to record with FW version Mayhem v1.41 (< 2,5MB/sec)  
- 			{ "750k ", 750000 },   // From that BW onwards, the LCD is ok, but the recorded file is auto decimated,(not real file size) 
-			{ "1100k", 1100000 },
-	       	{ "1750k", 1750000 },
-			{ "2000k", 2000000 },
-			{ "2500k", 2500000 },
-			{ "2750k", 2750000 }    // That is our max Capture option , to keep using later / 8 decimation (22Mhz sampling  ADC)
-		}
-	};
-	
-	RecordView record_view {
-		{ 0 * 8, 2 * 16, 30 * 8, 1 * 16 },
-		u"BBD_????", RecordView::FileType::RawS16, 16384, 3
-	};
+    OptionsField option_bandwidth{
+        {5 * 8, 1 * 16},
+        5,
+        {}};
 
-	spectrum::WaterfallWidget waterfall { };
+    RecordView record_view{
+        {0 * 8, 2 * 16, 30 * 8, 1 * 16},
+        u"BBD_????.*",
+        u"CAPTURES",
+        RecordView::FileType::RawS16,
+        16384,
+        3};
+
+    spectrum::WaterfallView waterfall{};
 };
 
 } /* namespace ui */
 
-#endif/*__CAPTURE_APP_HPP__*/
+#endif /*__CAPTURE_APP_HPP__*/

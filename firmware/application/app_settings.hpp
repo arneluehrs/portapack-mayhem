@@ -24,64 +24,99 @@
 #ifndef __APP_SETTINGS_H__
 #define __APP_SETTINGS_H__
 
-
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <utility>
 
 #include "file.hpp"
+#include "max283x.hpp"
 #include "string_format.hpp"
 
+namespace app_settings {
 
-namespace std {
-class app_settings {
+enum class ResultCode : uint8_t {
+    Ok,                // settings found
+    LoadFailed,        // settings (file) not found
+    SaveFailed,        // unable to save settings
+    SettingsDisabled,  // load/save disabled in settings
+};
 
+enum class Mode : uint8_t {
+    RX = 0x01,
+    TX = 0x02,
+    RX_TX = 0x03,  // Both TX/RX
+};
 
+enum class Options {
+    None = 0x0000,
 
-public:
+    /* Don't use target frequency from app settings. */
+    UseGlobalTargetFrequency = 0x0001,
+};
 
-#define SETTINGS_OK	 	 	0		// settings found
-#define SETTINGS_UNABLE_TO_LOAD		-1		// settings (file) not found
-#define SETTINGS_UNABLE_TO_SAVE		-2		// unable to save settings
-#define SETTINGS_DISABLED		-3		// load/save settings disabled in settings
+// TODO: separate types for TX/RX or union?
+/* NB: See RX/TX model headers for default values. */
+struct AppSettings {
+    Mode mode = Mode::RX;
+    Options options = Options::None;
+    uint32_t baseband_bandwidth = max283x::filter::bandwidth_minimum;
+    uint32_t sampling_rate = 3072000;  // Good for 48k audio.
+    uint8_t lna = 32;
+    uint8_t vga = 32;
+    uint8_t rx_amp = 0;
+    uint8_t tx_amp = 0;
+    uint8_t tx_gain = 35;
+    uint32_t channel_bandwidth = 1;
+    uint32_t rx_frequency;
+    uint32_t tx_frequency;
+    uint32_t step = 25000;
+    uint8_t modulation = 1;  // NFM
+    uint8_t am_config_index = 0;
+    uint8_t nbfm_config_index = 0;
+    uint8_t wfm_config_index = 0;
+    uint8_t squelch = 80;
 
+    uint8_t volume;
+};
 
+ResultCode load_settings(const std::string& app_name, AppSettings& settings);
+ResultCode save_settings(const std::string& app_name, AppSettings& settings);
 
-	struct AppSettings {
-		uint32_t 	baseband_bandwidth;
-		uint32_t 	channel_bandwidth;
-		uint8_t 	lna;
-		uint8_t		modulation;
-		uint8_t 	rx_amp;
-		uint32_t 	rx_frequency;
-		uint32_t 	sampling_rate;
-		uint8_t 	tx_amp;
-		uint32_t 	tx_frequency;
-		uint8_t 	tx_gain;
-		uint8_t 	vga;
-	};
+/* Copies common values to the receiver/transmitter models. */
+void copy_to_radio_model(const AppSettings& settings);
 
-	int load(std::string application, AppSettings* settings);
-	int save(std::string application, AppSettings* settings);
+/* Copies common values from the receiver/transmitter models. */
+void copy_from_radio_model(AppSettings& settings);
 
+/* RAII wrapper for automatically loading and saving settings for an app.
+ * NB: This should be added to a class before any LNA/VGA controls so that
+ * the receiver/transmitter models are set before the control ctors run. */
+class SettingsManager {
+   public:
+    SettingsManager(std::string app_name, Mode mode, Options options = Options::None);
+    ~SettingsManager();
 
-private:
+    SettingsManager(const SettingsManager&) = delete;
+    SettingsManager& operator=(const SettingsManager&) = delete;
+    SettingsManager(SettingsManager&&) = delete;
+    SettingsManager& operator=(SettingsManager&&) = delete;
 
-#define MAX_FILE_CONTENT_SIZE 1000
+    /* True if settings were successfully loaded from file. */
+    bool loaded() const { return loaded_; }
+    Mode mode() const { return settings_.mode; }
 
-	char 		file_content[MAX_FILE_CONTENT_SIZE] = {};	
-	std::string 	file_path = "";
-	std::string 	folder = "SETTINGS";
-	int		rc = SETTINGS_OK;
-	File 		settings_file { };
-	long long int	setting_value {} ;	
+    AppSettings& raw() { return settings_; }
 
-	long long int read_long_long(char* file_content, const char* setting_text);
+   private:
+    std::string app_name_;
+    AppSettings settings_;
+    bool loaded_;
+};
 
+}  // namespace app_settings
 
-}; // class app_settings
-} // namespace std
+ENABLE_FLAGS_OPERATORS(app_settings::Mode);
+ENABLE_FLAGS_OPERATORS(app_settings::Options);
 
-
-
-#endif/*__APP_SETTINGS_H__*/
+#endif /*__APP_SETTINGS_H__*/

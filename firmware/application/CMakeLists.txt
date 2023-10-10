@@ -27,6 +27,8 @@
 
 enable_language(C CXX ASM)
 
+include(CheckCXXCompilerFlag)
+
 project(application)
 
 # Compiler options here.
@@ -36,7 +38,13 @@ set(USE_OPT "-Os -g --specs=nano.specs")
 set(USE_COPT "-std=gnu99")
 
 # C++ specific options here (added to USE_OPT).
-set(USE_CPPOPT "-std=c++17 -fno-rtti -fno-exceptions -Weffc++ -Wuninitialized")
+check_cxx_compiler_flag("-std=c++20" cpp20_supported)
+if(cpp20_supported)
+	set(USE_CPPOPT "-std=c++20")
+else()
+	set(USE_CPPOPT "-std=c++17")
+endif()
+set(USE_CPPOPT "${USE_CPPOPT} -fno-rtti -fno-exceptions -Weffc++ -Wuninitialized -Wno-volatile")
 
 # Enable this if you want the linker to remove unused code and data
 set(USE_LINK_GC yes)
@@ -103,6 +111,7 @@ set(CSRC
 	${PLATFORMSRC}
 	${BOARDSRC}
 	${FATFSSRC}
+	firmware_info.c
 )
 
 # C++ sources that can be compiled in ARM or THUMB mode depending on the global
@@ -124,7 +133,7 @@ set(CPPSRC
 	${COMMON}/cpld_max5.cpp
 	${COMMON}/cpld_update.cpp
 	${COMMON}/cpld_xilinx.cpp
-	${COMMON}/debug.cpp
+	debug.cpp
 	${COMMON}/ert_packet.cpp
 	${COMMON}/event.cpp
 	${COMMON}/gcc.cpp
@@ -154,6 +163,7 @@ set(CPPSRC
 	${COMMON}/ui_widget.cpp
 	${COMMON}/utility.cpp
 	${COMMON}/wm8731.cpp
+	${COMMON}/performance_counter.cpp
 	app_settings.cpp
 	audio.cpp
 	baseband_api.cpp
@@ -165,7 +175,9 @@ set(CPPSRC
 	#emu_cc1101.cpp
 	rfm69.cpp
 	event_m0.cpp
+	file_reader.cpp
 	file.cpp
+	freqman_db.cpp
 	freqman.cpp
 	io_file.cpp
 	io_wave.cpp
@@ -173,6 +185,7 @@ set(CPPSRC
 	irq_lcd_frame.cpp
 	irq_rtc.cpp
 	log_file.cpp
+	metadata_file.cpp
 	portapack.cpp
 	qrcodegen.cpp
 	radio.cpp
@@ -193,6 +206,7 @@ set(CPPSRC
 	hw/debounce.cpp
 	hw/encoder.cpp
 	hw/max2837.cpp
+	hw/max2839.cpp
 	hw/max5864.cpp
 	hw/rffc507x.cpp
 	hw/rffc507x_spi.cpp
@@ -207,17 +221,21 @@ set(CPPSRC
 	ui/ui_alphanum.cpp
 	ui/ui_audio.cpp
 	ui/ui_channel.cpp
+	ui/ui_font_fixed_5x8.cpp
 	ui/ui_font_fixed_8x16.cpp
 	ui/ui_geomap.cpp
-        ui/ui_qrcode.cpp
+	ui/ui_qrcode.cpp
 	ui/ui_menu.cpp
 	ui/ui_btngrid.cpp
 	ui/ui_receiver.cpp
 	ui/ui_rssi.cpp
+	ui/ui_freqlist.cpp
 	ui/ui_tv.cpp
 	ui/ui_spectrum.cpp
+	ui/ui_styles.cpp
 	ui/ui_tabview.cpp
 	ui/ui_textentry.cpp
+	ui/ui_tone_key.cpp
 	ui/ui_transmitter.cpp
 	apps/ui_about_simple.cpp
 	apps/ui_adsb_rx.cpp
@@ -228,13 +246,16 @@ set(CPPSRC
 	apps/ui_nrf_rx.cpp
 	apps/ui_aprs_tx.cpp
 	apps/ui_bht_tx.cpp
+	apps/ui_dfu_menu.cpp
 	apps/ui_coasterp.cpp
 	apps/ui_debug.cpp
 	apps/ui_encoders.cpp
 	apps/ui_fileman.cpp
+	apps/ui_flash_utility.cpp
+	apps/ui_sd_over_usb.cpp
 	apps/ui_freqman.cpp
 	apps/ui_jammer.cpp
-	apps/ui_keyfob.cpp
+    #apps/ui_keyfob.cpp
 	apps/ui_lcr.cpp
 	apps/lge_app.cpp
 	apps/ui_looking_glass_app.cpp
@@ -252,7 +273,9 @@ set(CPPSRC
 	apps/ui_siggen.cpp
 	apps/ui_sonde.cpp
 	apps/ui_sstvtx.cpp
+	apps/ui_ss_viewer.cpp
 	# apps/ui_test.cpp
+	apps/ui_text_editor.cpp
 	apps/ui_tone_search.cpp
 	apps/ui_touch_calibration.cpp
 	apps/ui_touchtunes.cpp
@@ -266,14 +289,18 @@ set(CPPSRC
 	apps/ert_app.cpp
 	apps/lge_app.cpp
 	apps/pocsag_app.cpp
-	apps/replay_app.cpp
+	# apps/replay_app.cpp
 	apps/ui_playlist.cpp
 	apps/gps_sim_app.cpp
 	apps/soundboard_app.cpp
 	apps/ui_recon.cpp  
 	apps/ui_recon_settings.cpp
+	apps/ui_level.cpp  
 	apps/tpms_app.cpp
 	apps/tpms_app.cpp
+	apps/ui_spectrum_painter.cpp
+	apps/ui_spectrum_painter_image.cpp
+	apps/ui_spectrum_painter_text.cpp
 	protocols/aprs.cpp
 	protocols/ax25.cpp
 	protocols/bht.cpp
@@ -314,7 +341,10 @@ set(TCSRC)
 set(TCPPSRC)
 
 # List ASM source files here
-set(ASMSRC ${PORTASM})
+set(ASMSRC
+	${PORTASM}
+	lz4.S
+)
 
 set(INCDIR ${CMAKE_CURRENT_BINARY_DIR} ${COMMON} ${PORTINC} ${KERNINC} ${TESTINC}
 	${HALINC} ${PLATFORMINC} ${BOARDINC}

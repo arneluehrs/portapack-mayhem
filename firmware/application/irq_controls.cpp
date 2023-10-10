@@ -42,13 +42,13 @@ using namespace hackrf::one;
 
 static Thread* thread_controls_event = NULL;
 
-static std::array<Debounce, 7> switch_debounce;
+static std::array<Debounce, 8> switch_debounce;
 
 static Encoder encoder;
 
-static volatile uint32_t encoder_position { 0 };
+static volatile uint32_t encoder_position{0};
 
-static volatile uint32_t touch_phase { 0 };
+static volatile uint32_t touch_phase{0};
 
 /* TODO: Change how touch scanning works. It produces a decent amount of noise
  * when changing potential on the resistive touch pad. Among other things, I
@@ -60,11 +60,11 @@ static volatile uint32_t touch_phase { 0 };
  * Noise will only occur when the panel is being touched. Not ideal, but
  * an acceptable improvement.
  */
-static std::array<portapack::IO::TouchPinsConfig, 3> touch_pins_configs {
-	/* State machine will pause here until touch is detected. */
-	portapack::IO::TouchPinsConfig::SensePressure,
-	portapack::IO::TouchPinsConfig::SenseX,
-	portapack::IO::TouchPinsConfig::SenseY,
+static std::array<portapack::IO::TouchPinsConfig, 3> touch_pins_configs{
+    /* State machine will pause here until touch is detected. */
+    portapack::IO::TouchPinsConfig::SensePressure,
+    portapack::IO::TouchPinsConfig::SenseX,
+    portapack::IO::TouchPinsConfig::SenseY,
 };
 
 static touch::Frame temp_frame;
@@ -76,93 +76,91 @@ static bool touch_detected = false;
 static bool touch_cycle = false;
 
 static bool touch_update() {
-	const auto samples = touch::adc::get();
-	const auto current_phase = touch_pins_configs[touch_phase];
+    const auto samples = touch::adc::get();
+    const auto current_phase = touch_pins_configs[touch_phase];
 
-	switch(current_phase) {
-	case portapack::IO::TouchPinsConfig::SensePressure:
-		{
-			const auto z1 = samples.xp - samples.xn;
-			const auto z2 = samples.yp - samples.yn;
-			const auto touch_raw = (z1 > touch::touch_threshold) || (z2 > touch::touch_threshold);
-			touch_debounce = (touch_debounce << 1) | (touch_raw ? 1U : 0U);
-			touch_detected = ((touch_debounce & touch_debounce_mask) == touch_debounce_mask);
-			if( !touch_detected && !touch_cycle ) {
-				temp_frame.pressure = { };
-				return false;
-			} else {
-				temp_frame.pressure += samples;
-			}
-		}
-		break;
+    switch (current_phase) {
+        case portapack::IO::TouchPinsConfig::SensePressure: {
+            const auto z1 = samples.xp - samples.xn;
+            const auto z2 = samples.yp - samples.yn;
+            const auto touch_raw = (z1 > touch::touch_threshold) || (z2 > touch::touch_threshold);
+            touch_debounce = (touch_debounce << 1) | (touch_raw ? 1U : 0U);
+            touch_detected = ((touch_debounce & touch_debounce_mask) == touch_debounce_mask);
+            if (!touch_detected && !touch_cycle) {
+                temp_frame.pressure = {};
+                return false;
+            } else {
+                temp_frame.pressure += samples;
+            }
+        } break;
 
-	case portapack::IO::TouchPinsConfig::SenseX:
-		temp_frame.x += samples;
-		break;
+        case portapack::IO::TouchPinsConfig::SenseX:
+            temp_frame.x += samples;
+            break;
 
-	case portapack::IO::TouchPinsConfig::SenseY:
-		temp_frame.y += samples;
-		break;
+        case portapack::IO::TouchPinsConfig::SenseY:
+            temp_frame.y += samples;
+            break;
 
-	default:
-		break;
-	}
+        default:
+            break;
+    }
 
-	touch_phase++;
-	if( touch_phase >= touch_pins_configs.size() ) {
-		/* New iteration, calculate values and flag touch event */
-		touch_phase = 0;
-		temp_frame.touch = touch_detected;
-		touch_cycle = touch_detected;
-		touch_frame = temp_frame;
-		temp_frame = {};
-		return true;
-	} else {
-		return false;
-	}
+    touch_phase++;
+    if (touch_phase >= touch_pins_configs.size()) {
+        /* New iteration, calculate values and flag touch event */
+        touch_phase = 0;
+        temp_frame.touch = touch_detected;
+        touch_cycle = touch_detected;
+        touch_frame = temp_frame;
+        temp_frame = {};
+        return true;
+    } else {
+        return false;
+    }
 }
 
 static uint8_t switches_raw = 0;
 
 static bool switches_update(const uint8_t raw) {
-	// TODO: Only fire event on press, not release?
-	bool switch_changed = false;
-	for(size_t i=0; i<switch_debounce.size(); i++) {
-		switch_changed |= switch_debounce[i].feed((raw >> i) & 1);
-	}
+    // TODO: Only fire event on press, not release?
+    bool switch_changed = false;
+    for (size_t i = 0; i < switch_debounce.size(); i++) {
+        switch_changed |= switch_debounce[i].feed((raw >> i) & 1);
+    }
 
-	return switch_changed;
+    return switch_changed;
 }
 
 static bool encoder_read() {
-	const auto delta = encoder.update(
-		switch_debounce[5].state(),
-		switch_debounce[6].state()
-	);
+    const auto delta = encoder.update(
+        switch_debounce[5].state(),
+        switch_debounce[6].state());
 
-	if( delta != 0 ) {
-		encoder_position += delta;
-		return true;;
-	} else {
-		return false;
-	}
+    if (delta != 0) {
+        encoder_position += delta;
+        return true;
+        ;
+    } else {
+        return false;
+    }
 }
 
 void timer0_callback(GPTDriver* const) {
-	eventmask_t event_mask = 0;
-	if( touch_update() ) event_mask |= EVT_MASK_TOUCH;
-	switches_raw = portapack::io.io_update(touch_pins_configs[touch_phase]);
-	if( switches_update(switches_raw) ) {
-		event_mask |= EVT_MASK_SWITCHES;
-		if( encoder_read() ) event_mask |= EVT_MASK_ENCODER;
-	}
+    eventmask_t event_mask = 0;
+    if (touch_update()) event_mask |= EVT_MASK_TOUCH;
+    switches_raw = portapack::io.io_update(touch_pins_configs[touch_phase]);
+    if (switches_update(switches_raw)) {
+        event_mask |= EVT_MASK_SWITCHES;
+        if (encoder_read()) event_mask |= EVT_MASK_ENCODER;
+    }
 
-	/* Signal event loop */
-	if( event_mask ) {
-		chSysLockFromIsr();
-		chEvtSignalI(thread_controls_event, event_mask);
-		chSysUnlockFromIsr();
-	}
+    /* Signal event loop */
+    if (event_mask) {
+        chSysLockFromIsr();
+        chEvtSignalI(thread_controls_event, event_mask);
+        chSysUnlockFromIsr();
+    }
 }
 
 /* TODO: Refactor some/all of this to appropriate shared headers? */
@@ -174,47 +172,70 @@ static constexpr uint32_t timer0_match_count = timer0_count_f / ui_interrupt_rat
 /* GPT driver refers to configuration structure during runtime, so make sure
  * it sticks around.
  */
-static GPTConfig timer0_config {
-	.callback = timer0_callback,
-	.pr = timer0_prescaler_ratio - 1,
+static GPTConfig timer0_config{
+    .callback = timer0_callback,
+    .pr = timer0_prescaler_ratio - 1,
 };
 
 void controls_init() {
-	thread_controls_event = chThdSelf();
+    thread_controls_event = chThdSelf();
 
-	touch::adc::start();
+    touch::adc::start();
 
-	/* GPT timer 0 is used to scan user interface controls -- touch screen,
-	 * navigation switches.
-	 */
-	gptStart(&GPTD1, &timer0_config);
-	gptStartContinuous(&GPTD1, timer0_match_count);
+    /* GPT timer 0 is used to scan user interface controls -- touch screen,
+     * navigation switches.
+     */
+    gptStart(&GPTD1, &timer0_config);
+    gptStartContinuous(&GPTD1, timer0_match_count);
+
+    // Enable repeat for directional switches only
+    for (size_t i = 0; i < 4; i++)
+        switch_debounce[i].enable_repeat();
 }
 
 SwitchesState get_switches_state() {
-	SwitchesState result;
-	for(size_t i=0; i<result.size(); i++) {
- 		// TODO: Ignore multiple keys at the same time?
- 		result[i] = switch_debounce[i].state();
-	}
+    SwitchesState result;
 
-	return result;
+    // Right, Left, Down, Up, & Select switches
+    for (size_t i = 0; i < result.size() - 1; i++) {
+        // TODO: Ignore multiple keys at the same time?
+        result[i] = switch_debounce[i].state();
+    }
+
+    // Grab Dfu switch from bit 7 and return in bit 5 so that all switches are grouped together in this 6-bit result
+    result[(size_t)Switch::Dfu] = switch_debounce[7].state();
+    return result;
+}
+
+// Configure which switches support long press (note those switches will not support Repeat function)
+void switches_long_press_enable(SwitchesState switches_long_press_enabled) {
+    // Right, Left, Down, Up, & Select switches
+    for (size_t i = 0; i < switches_long_press_enabled.size() - 1; i++) {
+        switch_debounce[i].set_long_press_support(switches_long_press_enabled[i]);
+    }
+
+    // Dfu switch
+    switch_debounce[7].set_long_press_support(switches_long_press_enabled[(size_t)Switch::Dfu]);
+}
+
+bool switch_long_press_occurred(size_t v) {
+    return (v == (size_t)Switch::Dfu) ? switch_debounce[7].long_press_occurred() : switch_debounce[v].long_press_occurred();
 }
 
 EncoderPosition get_encoder_position() {
-	return encoder_position;
+    return encoder_position;
 }
 
 touch::Frame get_touch_frame() {
-	return touch_frame;
+    return touch_frame;
 }
 
 namespace control {
 namespace debug {
 
 uint8_t switches() {
-	return switches_raw;
+    return switches_raw;
 }
 
-} /* debug */
-} /* control */
+}  // namespace debug
+}  // namespace control

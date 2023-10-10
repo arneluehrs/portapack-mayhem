@@ -27,15 +27,17 @@
 
 #include "touch.hpp"
 
+// Must be same values as in ui::KeyEvent
 enum class Switch {
-	Right = 0,
-	Left = 1,
-	Down = 2,
-	Up = 3,
-	Sel = 4,
+    Right = 0,
+    Left = 1,
+    Down = 2,
+    Up = 3,
+    Sel = 4,
+    Dfu = 5,
 };
 
-using SwitchesState = std::bitset<5>;
+using SwitchesState = std::bitset<6>;
 
 using EncoderPosition = uint32_t;
 
@@ -43,13 +45,15 @@ void controls_init();
 SwitchesState get_switches_state();
 EncoderPosition get_encoder_position();
 touch::Frame get_touch_frame();
+void switches_long_press_enable(SwitchesState v);
+bool switch_long_press_occurred(size_t v);
 
 namespace control {
 namespace debug {
 
 uint8_t switches();
 
-} /* debug */
-} /* control */
+}  // namespace debug
+}  // namespace control
 
-#endif/*__IRQ_CONTROLS_H__*/
+#endif /*__IRQ_CONTROLS_H__*/

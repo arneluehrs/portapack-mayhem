@@ -32,59 +32,58 @@
 namespace ui {
 
 class AlphanumView : public TextEntryView {
-public:
-	AlphanumView(NavigationView& nav, std::string& str, size_t max_length);
-	
-	AlphanumView(const AlphanumView&) = delete;
-	AlphanumView(AlphanumView&&) = delete;
-	AlphanumView& operator=(const AlphanumView&) = delete;
-	AlphanumView& operator=(AlphanumView&&) = delete;
+   public:
+    AlphanumView(NavigationView& nav, std::string& str, size_t max_length);
 
-	void paint(Painter& painter) override;
-	bool on_encoder(const EncoderEvent delta) override;
+    AlphanumView(const AlphanumView&) = delete;
+    AlphanumView(AlphanumView&&) = delete;
+    AlphanumView& operator=(const AlphanumView&) = delete;
+    AlphanumView& operator=(AlphanumView&&) = delete;
 
-private:
-	const char * const keys_upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ' .<";
-	const char * const keys_lower = "abcdefghijklmnopqrstuvwxyz' .<";
-	const char * const keys_digit = "0123456789!\"#'()*+-/:;=>?@[\\]<";
-	
-	const std::pair<std::string, const char *> key_sets[3] = {
-		{ "Upper", keys_upper },
-		{ "Lower", keys_lower },
-		{ "Digit", keys_digit }
-	};
-	
-	int16_t focused_button = 0;
-	uint32_t mode = 0;	// Uppercase
-	
-	void set_mode(const uint32_t new_mode);
-	void on_button(Button& button);
+    bool on_encoder(const EncoderEvent delta) override;
 
-	std::array<Button, 30> buttons { };
+   private:
+    const char* const keys_upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ, ._";
+    const char* const keys_lower = "abcdefghijklmnopqrstuvwxyz, ._";
+    const char* const keys_digit = "0123456789!\"#'()*+-/:;=<>@[\\]?";
 
-	Button button_mode {
-		{ 21 * 8, 33 * 8, 8 * 8, 32 },
-		""
-	};
-	
-	Text text_raw {
-		{ 1 * 8, 33 * 8, 4 * 8, 16 },
-		"Raw:"
-	};
-	NumberField field_raw {
-		{ 5 * 8, 33 * 8 },
-		3,
-		{ 1, 255 },
-		1,
-		'0'
-	};
+    const std::pair<std::string, const char*> key_sets[3] = {
+        {"ABC", keys_upper},
+        {"abc", keys_lower},
+        {"123", keys_digit}};
 
-	Button button_ok {
-		{ 10 * 8, 33 * 8, 9 * 8, 32 },
-		"OK"
-	};
+    int16_t focused_button = 0;
+    uint32_t mode = 0;  // Uppercase
+
+    void set_mode(const uint32_t new_mode);
+    void on_button(Button& button);
+
+    std::array<Button, 30> buttons{};
+
+    Labels labels{
+        {{1 * 8, 33 * 8}, "Raw:", Color::light_grey()},
+        {{1 * 8, 35 * 8}, "AKA:", Color::light_grey()}};
+
+    NumberField field_raw{
+        {5 * 8, 33 * 8},
+        3,
+        {1, 255},
+        1,
+        '0'};
+
+    Text text_raw_to_char{
+        {5 * 8, 35 * 8, 4 * 8, 16},
+        "0"};
+
+    Button button_delete{
+        {9 * 8, 33 * 8, 6 * 8, 32},
+        "<DEL"};
+
+    Button button_mode{
+        {16 * 8, 33 * 8, 5 * 8, 32},
+        ""};
 };
 
 } /* namespace ui */
 
-#endif/*__ALPHANUM_H__*/
+#endif /*__ALPHANUM_H__*/

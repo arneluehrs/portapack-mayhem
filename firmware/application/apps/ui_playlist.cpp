@@ -2,6 +2,7 @@
  * Copyright (C) 2016 Jared Boone, ShareBrained Technology, Inc.
  * Copyright (C) 2016 Furrtek
  * Copyleft  (ↄ) 2022 NotPike
+ * Copyright (C) 2023 Kyle Reed, zxkmm
  *
  * This file is part of PortaPack.
  *
@@ -22,307 +23,471 @@
  */
 
 #include "ui_playlist.hpp"
-#include "string_format.hpp"
 
-#include "ui_fileman.hpp"
+#include "convert.hpp"
+#include "file_reader.hpp"
 #include "io_file.hpp"
+#include "string_format.hpp"
+#include "ui_fileman.hpp"
+#include "utility.hpp"
 
 #include "baseband_api.hpp"
 #include "portapack.hpp"
 #include "portapack_persistent_memory.hpp"
 #include <unistd.h>
+#include <fstream>
 
 using namespace portapack;
+namespace fs = std::filesystem;
+
+/* TODO
+ * - Should frequency overrides be saved in the playlist?
+ * - Start playing from current track (vs start over)?
+ */
 
 namespace ui {
 
-void PlaylistView::set_ready() {
-	ready_signal = true;
+// TODO: consolidate extesions into a shared header?
+static const fs::path c16_ext = u".C16";
+static const fs::path ppl_ext = u".PPL";
+
+void PlaylistView::load_file(const fs::path& playlist_path) {
+    File playlist_file;
+    auto error = playlist_file.open(playlist_path.string());
+
+    if (error)
+        return;
+
+    auto reader = FileLineReader(playlist_file);
+    for (const auto& line : reader) {
+        if (line.length() == 0 || line[0] == '#')
+            continue;  // Empty or comment line.
+
+        auto cols = split_string(line, ',');
+        auto entry = load_entry(trim(cols[0]));
+
+        if (!entry)
+            continue;
+
+        // Read optional delay value.
+        if (cols.size() > 1)
+            parse_int(cols[1], entry->ms_delay);
+
+        playlist_db_.emplace_back(*std::move(entry));
+    }
 }
 
+Optional<PlaylistView::playlist_entry> PlaylistView::load_entry(fs::path&& path) {
+    File capture_file;
 
-	void PlaylistView::load_file(std::filesystem::path playlist_path) {
-		File playlist_file;
-		
-		auto error = playlist_file.open(playlist_path.string());
-		if (!error.is_valid()) {
-			std::string line;
-			char one_char[1];
-			for (size_t pointer =0 ; pointer < playlist_file.size(); pointer++) {
-				playlist_file.seek(pointer);
-				playlist_file.read(one_char, 1);
-				if ((int) one_char[0] >= ' ') {
-					line += one_char[0];
-				} else if (one_char[0] == '\n') {
-					txtline_process(line); 
-					line.clear();
-				}
-			}
-			if (line.length() > 0) {
-				txtline_process(line); 
-			}
-		}
-		playlist_masterdb = playlist_db;
-		return ;
-		}
+    auto error = capture_file.open(path);
+    if (error)
+        return {};
 
+    // Read metafile if it exists.
+    auto metadata_path = get_metadata_path(path);
+    auto metadata = read_metadata_file(metadata_path);
 
-	void PlaylistView::txtline_process(std::string &line) {
-		playlist_entry new_item;
-				rf::Frequency f;
-				size_t previous = 0;
-				size_t current = line.find(',');
-				std::string freqs = line.substr(0, current);
-				previous = current +1;
-				current = line.find(',', previous);
-				std::string file = line.substr(previous, current - previous);
-				previous = current +1;
-				current = line.find(',', previous);
-				uint32_t sample_rate = strtoll(line.substr(previous).c_str(), nullptr,  10);
+    // If no metadata found, fallback to the TX frequency.
+    if (!metadata)
+        metadata = {transmitter_model.target_frequency(), 500'000};
 
-				f = strtoll(freqs.c_str(), nullptr, 0);
-				new_item.replay_frequency = f;
-				new_item.replay_file = "/" + file;
-				new_item.sample_rate = sample_rate;
-				new_item.next_delay = 0;
-
-					playlist_db.push_back(std::move(new_item));
-	}
-
-void PlaylistView::on_file_changed(std::filesystem::path new_file_path, rf::Frequency replay_frequency, uint32_t replay_sample_rate) {
-	File data_file;	
-	// Get file size
-	auto data_open_error = data_file.open("/" + new_file_path.string());
-	if (data_open_error.is_valid()) {
-		file_error();
-		return;
-	}
-	
-	file_path = new_file_path;
-	field_frequency.set_value(replay_frequency);
-	
-	sample_rate = replay_sample_rate;
-	
-	text_sample_rate.set(unit_auto_scale(sample_rate, 3, 0) + "Hz");
-	
-	auto file_size = data_file.size();
-	auto duration = (file_size * 1000) / (2 * 2 * sample_rate);
-	
-	progressbar.set_max(file_size);
-	text_filename.set(file_path.filename().string().substr(0, 12));
-	text_duration.set(to_string_time_ms(duration));
-	
-	button_play.focus();
+    return playlist_entry{
+        std::move(path),
+        *metadata,
+        capture_file.size(),
+        0u};
 }
 
-void PlaylistView::on_tx_progress(const uint32_t progress) {
-	progressbar.set_value(progress);
+void PlaylistView::on_file_changed(const fs::path& new_file_path) {
+    stop();
+
+    current_index_ = 0;
+    playlist_path_ = new_file_path;
+    playlist_db_.clear();
+    load_file(playlist_path_);
+
+    update_ui();
+
+    // TODO: fix in UI framework with 'try_focus()'?
+    // Hack around focus getting called by ctor before parent is set.
+    if (parent())
+        button_play.focus();
 }
 
-void PlaylistView::focus() {
-	button_open.focus();
+void PlaylistView::open_file(bool prompt_save) {
+    if (playlist_dirty_ && prompt_save) {
+        nav_.display_modal(
+            "Save?", "Save changes?", YESNO,
+            [this](bool choice) {
+                if (choice)
+                    save_file(false);
+            });
+        nav_.set_on_pop([this]() { open_file(false); });
+        return;
+    }
+
+    auto open_view = nav_.push<FileLoadView>(".PPL");
+    open_view->push_dir(u"PLAYLIST");
+    open_view->on_changed = [this](fs::path new_file_path) {
+        on_file_changed(new_file_path);
+    };
 }
 
-void PlaylistView::file_error() {
-	nav_.display_modal("Error", "File "+file_path.string() +" read error. " +file_path.string());
+void PlaylistView::save_file(bool show_dialogs) {
+    if (!playlist_dirty_ || playlist_path_.empty())
+        return;
+
+    ensure_directory(playlist_path_.parent_path());
+
+    File playlist_file;
+    auto error = playlist_file.create(playlist_path_.string());
+
+    if (error) {
+        if (show_dialogs)
+            nav_.display_modal(
+                "Save Error",
+                "Could not save file\n" + playlist_path_.string());
+        return;
+    }
+
+    for (const auto& entry : playlist_db_) {
+        playlist_file.write_line(
+            entry.path.string() + "," +
+            to_string_dec_uint(entry.ms_delay));
+    }
+
+    playlist_dirty_ = false;
+
+    if (show_dialogs)
+        nav_.display_modal(
+            "Save",
+            "Saved playlist\n" + playlist_path_.string());
+}
+
+void PlaylistView::add_entry(fs::path&& path) {
+    if (playlist_path_.empty()) {
+        playlist_path_ = next_filename_matching_pattern(u"/PLAYLIST/PLAY_????.PPL");
+
+        // Hack around focus getting called by ctor before parent is set.
+        if (parent())
+            button_play.focus();
+    }
+
+    auto entry = load_entry(std::move(path));
+    if (entry) {
+        playlist_db_.emplace_back(*std::move(entry));
+        current_index_ = playlist_db_.size() - 1;
+        playlist_dirty_ = true;
+    }
+
+    update_ui();
+}
+
+void PlaylistView::delete_entry() {
+    if (playlist_db_.empty())
+        return;
+
+    // Ugh, the STL is gross.
+    playlist_db_.erase(playlist_db_.begin() + current_index_);
+
+    if (current_index_ > 0)
+        --current_index_;
+
+    playlist_dirty_ = true;
+    update_ui();
+}
+
+void PlaylistView::show_file_error(const fs::path& path, const std::string& message) {
+    nav_.display_modal("Error", "Error opening file \n" + path.string() + "\n" + message);
+}
+
+PlaylistView::playlist_entry* PlaylistView::current() {
+    return playlist_db_.empty() ? nullptr : &playlist_db_[current_index_];
 }
 
 bool PlaylistView::is_active() const {
-	return (bool)replay_thread;
+    return replay_thread_ != nullptr;
 }
 
-bool PlaylistView::loop() const {
-	return (bool) playlist_db.size();
+bool PlaylistView::at_end() const {
+    return current_index_ >= playlist_db_.size();
 }
 
 void PlaylistView::toggle() {
-	if( is_active() ) {
-		stop(false);
-	} else {
-
-		start();
-	}
+    if (is_active())
+        stop();
+    else
+        start();
 }
 
 void PlaylistView::start() {
-	stop(false);
+    if (playlist_db_.empty())
+        return;  // Nothing to do.
 
-		playlist_entry item = playlist_db.front();
-		playlist_db.pop_front();
-	//		playlist_entry item = playlist_db[0];
-//	for (playlist_entry item : playlist_db) {
-	//	file_path = item.replay_file;
-	//	rf::Frequency replay_frequency = strtoll(item.replay_frequency.c_str(),nullptr,10);
-		on_file_changed(item.replay_file, item.replay_frequency, item.sample_rate);
-		on_target_frequency_changed(item.replay_frequency);
-
-		std::unique_ptr<stream::Reader> reader;
-		
-		auto p = std::make_unique<FileReader>();
-		auto open_error = p->open(file_path);
-		if( open_error.is_valid() ) {
-			file_error();
-			return;                               // Fixes TX bug if there's a file error
-		} else {
-			reader = std::move(p);
-		}
-
-		if( reader ) {
-			button_play.set_bitmap(&bitmap_stop);
-			baseband::set_sample_rate(sample_rate * 8);
-			
-			replay_thread = std::make_unique<ReplayThread>(
-				std::move(reader),
-				read_size, buffer_count,
-				&ready_signal,
-				[](uint32_t return_code) {
-					ReplayThreadDoneMessage message { return_code };
-					EventDispatcher::send_message(message);
-				}
-			);
-		}
-		field_rfgain.on_change = [this](int32_t v) {
-			tx_gain = v;
-		};  
-		field_rfgain.set_value(tx_gain);
-		receiver_model.set_tx_gain(tx_gain); 
-		
-
-		field_rfamp.on_change = [this](int32_t v) {
-			rf_amp = (bool)v;
-		};
-		field_rfamp.set_value(rf_amp ? 14 : 0);
-
-		//Enable Bias Tee if selected
-		radio::set_antenna_bias(portapack::get_antenna_bias());
-			
-		radio::enable({
-			receiver_model.tuning_frequency(),
-			sample_rate * 8,
-			baseband_bandwidth,
-			rf::Direction::Transmit,
-			rf_amp,         //  previous code line : "receiver_model.rf_amp()," was passing the same rf_amp of all Receiver Apps  
-			static_cast<int8_t>(receiver_model.lna()),
-			static_cast<int8_t>(receiver_model.vga())
-		});  
-
-//	}
-} 
-
-void PlaylistView::stop(const bool do_loop) {
-	if( is_active() ) {
-		replay_thread.reset();
-	}
-	if (do_loop) {
-		if (playlist_db.size() > 0 ) {
-			start();
-		} else {
-			playlist_db = playlist_masterdb;
-			start();
-		}
-	} else {
-		radio::set_antenna_bias(false);    //Turn off Bias Tee
-		radio::disable();
-		button_play.set_bitmap(&bitmap_play);
-	}
-	
-	ready_signal = false;
+    current_index_ = 0u;
+    send_current_track();
 }
 
-void PlaylistView::handle_replay_thread_done(const uint32_t return_code) {
-	if (return_code == ReplayThread::END_OF_FILE) {
-			stop(true);
-	} else if (return_code == ReplayThread::READ_ERROR) {
-		stop(false);
-		file_error();
-	}
-	
-	progressbar.set_value(0);
+/* Advance to the next track in the playlist. */
+bool PlaylistView::next_track() {
+    ++current_index_;
+
+    // Reset to the 0 once at the end to prevent current_index_
+    // from being outside the bounds of playlist_db_ when painting.
+    if (at_end()) {
+        current_index_ = 0;
+        return check_loop.value();  // Keep going if looping.
+    }
+
+    return true;
+}
+
+/* Transmits the current_entry_ */
+void PlaylistView::send_current_track() {
+    // Prepare to send a file.
+    replay_thread_.reset();
+    transmitter_model.disable();
+    ready_signal_ = false;
+
+    if (!current())
+        return;
+
+    // TODO: Use a timer so the UI isn't frozen.
+    if (current()->ms_delay > 0)
+        chThdSleepMilliseconds(current()->ms_delay);
+
+    // Open the sample file to send.
+    auto reader = std::make_unique<FileReader>();
+    auto error = reader->open(current()->path);
+    if (error) {
+        show_file_error(current()->path, "Can't open file to send.");
+        return;
+    }
+
+    // ReplayThread starts immediately on construction so
+    // these need to be set before creating the ReplayThread.
+    transmitter_model.set_target_frequency(current()->metadata.center_frequency);
+    transmitter_model.set_sampling_rate(current()->metadata.sample_rate * 8);
+    transmitter_model.set_baseband_bandwidth(baseband_bandwidth);
+    transmitter_model.enable();
+
+    // Set baseband sample rate too for waterfall to be correct.
+    // TODO: Why doesn't the transmitter_model just handle this?
+    baseband::set_sample_rate(transmitter_model.sampling_rate());
+
+    // Reset the transmit progress bar.
+    progressbar_transmit.set_value(0);
+
+    // Use the ReplayThread class to send the data.
+    replay_thread_ = std::make_unique<ReplayThread>(
+        std::move(reader),
+        /* read_size */ 0x4000,
+        /* buffer_count */ 3,
+        &ready_signal_,
+        [](uint32_t return_code) {
+            ReplayThreadDoneMessage message{return_code};
+            EventDispatcher::send_message(message);
+        });
+
+    // Now it's sending, update the UI.
+    update_ui();
+}
+
+void PlaylistView::stop() {
+    // This terminates the underlying chThread.
+    replay_thread_.reset();
+    transmitter_model.disable();
+
+    // Reset the transmit progress bar.
+    progressbar_transmit.set_value(0);
+    update_ui();
+}
+
+void PlaylistView::update_ui() {
+    if (playlist_db_.empty()) {
+        text_filename.set("-");
+        text_sample_rate.set("-");
+        text_duration.set("-");
+
+        if (playlist_path_.empty())
+            text_track.set("Open playlist or add capture.");
+        else
+            text_track.set(playlist_path_.filename().string());
+
+        progressbar_track.set_value(0);
+        progressbar_track.set_max(0);
+        progressbar_transmit.set_max(0);
+
+    } else {
+        chDbgAssert(!at_end(), "update_ui #1", "current_index_ invalid");
+
+        text_filename.set(current()->path.filename().string());
+        text_sample_rate.set(unit_auto_scale(current()->metadata.sample_rate, 3, 0) + "Hz");
+
+        auto duration = ms_duration(current()->file_size, current()->metadata.sample_rate, 4);
+        text_duration.set(to_string_time_ms(duration));
+        field_frequency.set_value(current()->metadata.center_frequency);
+
+        text_track.set(
+            to_string_dec_uint(current_index_ + 1) + "/" +
+            to_string_dec_uint(playlist_db_.size()) + " " +
+            playlist_path_.filename().string());
+
+        progressbar_track.set_max(playlist_db_.size() - 1);
+        progressbar_track.set_value(current_index_);
+        progressbar_transmit.set_max(current()->file_size);
+    }
+
+    button_play.set_bitmap(is_active() ? &bitmap_stop : &bitmap_play);
+}
+
+void PlaylistView::on_tx_progress(uint32_t progress) {
+    progressbar_transmit.set_value(progress);
+}
+
+void PlaylistView::handle_replay_thread_done(uint32_t return_code) {
+    if (return_code == ReplayThread::END_OF_FILE) {
+        if (next_track()) {
+            send_current_track();
+            return;
+        }
+    }
+
+    if (return_code == ReplayThread::READ_ERROR)
+        show_file_error(current()->path, "Replay read failed.");
+
+    stop();
 }
 
 PlaylistView::PlaylistView(
-	NavigationView& nav
-) : nav_ (nav)
-{
+    NavigationView& nav)
+    : nav_(nav) {
+    baseband::run_image(portapack::spi_flash::image_tag_replay);
 
-	tx_gain = 35;field_rfgain.set_value(tx_gain);  // Initial default  value (-12 dB's max ).
-	field_rfamp.set_value(rf_amp ? 14 : 0);  // Initial default value True. (TX RF amp on , +14dB's)
+    add_children({
+        &text_filename,
+        &text_sample_rate,
+        &text_duration,
+        &progressbar_track,
+        &progressbar_transmit,
+        &field_frequency,
+        &tx_view,
+        &check_loop,
+        &button_play,
+        &text_track,
+        &button_prev,
+        &button_add,
+        &button_delete,
+        &button_open,
+        &button_save,
+        &button_next,
+        &waterfall,
+    });
 
-	baseband::run_image(portapack::spi_flash::image_tag_replay);
+    waterfall.show_audio_spectrum_view(false);
 
-	add_children({
-		&labels,
-		&button_open,
-		&text_filename,
-		&text_sample_rate,
-		&text_duration,
-		&progressbar,
-		&field_frequency,
-		&field_rfgain, 
-		&field_rfamp,       // let's not use common rf_amp
-		&check_loop,
-		&button_play,
-		&waterfall,
-	});
-	
-	field_frequency.set_value(target_frequency());
-	field_frequency.set_step(receiver_model.frequency_step());
-	field_frequency.on_change = [this](rf::Frequency f) {
-		this->on_target_frequency_changed(f);
-	};
-	field_frequency.on_edit = [this, &nav]() {
-		// TODO: Provide separate modal method/scheme?
-		auto new_view = nav.push<FrequencyKeypadView>(this->target_frequency());
-		new_view->on_changed = [this](rf::Frequency f) {
-			this->on_target_frequency_changed(f);
-			this->field_frequency.set_value(f);
-		};
-	};
+    field_frequency.set_value(100'000'000);
+    field_frequency.on_change = [this](rf::Frequency f) {
+        if (current())
+            current()->metadata.center_frequency = f;
+    };
+    field_frequency.on_edit = [this]() {
+        auto freq_view = nav_.push<FrequencyKeypadView>(field_frequency.value());
+        freq_view->on_changed = [this](rf::Frequency f) {
+            field_frequency.set_value(f);
+        };
+    };
 
-	field_frequency.set_step(5000);
-	
-	button_play.on_select = [this](ImageButton&) {
-		this->toggle();
-	};
-	
-	button_open.on_select = [this, &nav](Button&) {
-		auto open_view = nav.push<FileLoadView>(".TXT");
-		open_view->on_changed = [this](std::filesystem::path new_file_path) {
-			load_file(new_file_path);
-		};
-	};
+    button_play.on_select = [this](ImageButton&) {
+        toggle();
+    };
+
+    button_add.on_select = [this, &nav]() {
+        if (is_active())
+            return;
+        auto open_view = nav_.push<FileLoadView>(".C16");
+        open_view->push_dir(u"CAPTURES");
+        open_view->on_changed = [this](fs::path path) {
+            add_entry(std::move(path));
+        };
+    };
+
+    button_delete.on_select = [this, &nav]() {
+        if (is_active())
+            return;
+        delete_entry();
+    };
+
+    button_open.on_select = [this, &nav]() {
+        if (is_active())
+            stop();
+        open_file();
+    };
+
+    button_save.on_select = [this]() {
+        if (is_active())
+            stop();
+        save_file();
+    };
+
+    button_prev.on_select = [this]() {
+        if (is_active())
+            return;
+        --current_index_;
+        if (at_end())
+            current_index_ = playlist_db_.size() - 1;
+        update_ui();
+    };
+
+    button_next.on_select = [this]() {
+        if (is_active())
+            return;
+        ++current_index_;
+        if (at_end())
+            current_index_ = 0;
+        update_ui();
+    };
+
+    update_ui();
+}
+
+PlaylistView::PlaylistView(
+    NavigationView& nav,
+    const fs::path& path)
+    : PlaylistView(nav) {
+    auto ext = path.extension();
+    if (path_iequal(ext, ppl_ext))
+        on_file_changed(path);
+    else if (path_iequal(ext, c16_ext))
+        add_entry(fs::path{path});
 }
 
 PlaylistView::~PlaylistView() {
-	radio::disable();
-	baseband::shutdown();
+    transmitter_model.disable();
+    baseband::shutdown();
+}
+
+void PlaylistView::set_parent_rect(Rect new_parent_rect) {
+    View::set_parent_rect(new_parent_rect);
+
+    ui::Rect waterfall_rect{
+        0, header_height, new_parent_rect.width(),
+        new_parent_rect.height() - header_height};
+    waterfall.set_parent_rect(waterfall_rect);
+}
+
+void PlaylistView::focus() {
+    if (playlist_path_.empty())
+        button_add.focus();
+    else
+        button_play.focus();
 }
 
 void PlaylistView::on_hide() {
-	stop(false);
-	// TODO: Terrible kludge because widget system doesn't notify Waterfall that
-	// it's being shown or hidden.
-	waterfall.on_hide();
-	View::on_hide();
-}
-
-void PlaylistView::set_parent_rect(const Rect new_parent_rect) {
-	View::set_parent_rect(new_parent_rect);
-
-	const ui::Rect waterfall_rect { 0, header_height, new_parent_rect.width(), new_parent_rect.height() - header_height };
-	waterfall.set_parent_rect(waterfall_rect);
-}
-
-void PlaylistView::on_target_frequency_changed(rf::Frequency f) {
-	set_target_frequency(f);
-}
-
-void PlaylistView::set_target_frequency(const rf::Frequency new_value) {
-	persistent_memory::set_tuned_frequency(new_value);;
-}
-
-rf::Frequency PlaylistView::target_frequency() const {
-	return persistent_memory::tuned_frequency();
+    stop();
+    waterfall.on_hide();
+    View::on_hide();
 }
 
 } /* namespace ui */

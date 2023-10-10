@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2015 Jared Boone, ShareBrained Technology, Inc.
  * Copyright (C) 2016 Furrtek
+ * Copyright (C) 2023 Kyle Reed
  *
  * This file is part of PortaPack.
  *
@@ -26,64 +27,69 @@
 #include <cstdint>
 #include <cstddef>
 
-#include "receiver_model.hpp"
-#include "message.hpp"
-#include "rf_path.hpp"
+#include "app_settings.hpp"
 #include "max2837.hpp"
-#include "volume.hpp"
+#include "message.hpp"
+#include "receiver_model.hpp"
+#include "rf_path.hpp"
 #include "signal.hpp"
 
 class TransmitterModel {
-public:
-	rf::Frequency tuning_frequency() const;
-	void set_tuning_frequency(rf::Frequency f);
+   public:
+    struct settings_t {
+        uint32_t baseband_bandwidth = max283x::filter::bandwidth_minimum;
+        uint32_t sampling_rate = 3'072'000;
+        uint32_t channel_bandwidth = 1;
+        /* 35 should give approx 1m transmission range. */
+        uint8_t tx_gain_db = 35;
+        bool rf_amp = false;
+    };
 
-	void set_antenna_bias();
-	
-	bool rf_amp() const;
-	void set_rf_amp(bool enabled);
+    /* The frequency to transmit on. */
+    rf::Frequency target_frequency() const;
+    void set_target_frequency(rf::Frequency f);
 
-	int32_t lna() const;
-	void set_lna(int32_t v_db);
+    uint32_t baseband_bandwidth() const;
+    void set_baseband_bandwidth(uint32_t v);
 
-	uint32_t baseband_bandwidth() const;
-	void set_baseband_bandwidth(uint32_t v);
+    // TODO: Doesn't actually affect radio.
+    uint32_t channel_bandwidth() const;
+    void set_channel_bandwidth(uint32_t v);
 
-	int32_t vga() const;
-	void set_vga(int32_t v_db);
-	
-	int32_t tx_gain() const;
-	void set_tx_gain(int32_t v_db);
-	
-	uint32_t channel_bandwidth() const;
-	void set_channel_bandwidth(uint32_t v);
+    uint32_t sampling_rate() const;
+    void set_sampling_rate(uint32_t v);
 
-	uint32_t sampling_rate() const;
-	void set_sampling_rate(uint32_t v);
+    uint8_t tx_gain() const;
+    void set_tx_gain(uint8_t v_db);
 
-	void enable();
-	void disable();
+    bool rf_amp() const;
+    void set_rf_amp(bool enabled);
 
-private:
-	bool enabled_ { false };
-	bool rf_amp_ { false };
-	int32_t lna_gain_db_ { 0 };
-	uint32_t channel_bandwidth_ { 1 };
-	uint32_t baseband_bandwidth_ { max2837::filter::bandwidth_minimum };
-	int32_t vga_gain_db_ { 8 };
-	int32_t tx_gain_db_ { 47 };
-	uint32_t sampling_rate_ { 3072000 };
-	SignalToken signal_token_tick_second { };
+    void set_antenna_bias();
 
-	void update_tuning_frequency();
-	void update_antenna_bias();
-	void update_rf_amp();
-	void update_lna();
-	void update_baseband_bandwidth();
-	void update_vga();
-	void update_tx_gain();
-	void update_sampling_rate();
-	void on_tick_second();
+    void enable();
+    void disable();
+
+    void initialize();
+
+    void configure_from_app_settings(const app_settings::AppSettings& settings);
+
+    /* Get access to the underlying settings to allow
+     * values to be set directly without calling update. */
+    settings_t& settings() { return settings_; }
+
+   private:
+    settings_t settings_{};
+    bool enabled_ = false;
+    SignalToken signal_token_tick_second{};
+
+    void update_tuning_frequency();
+    void update_baseband_bandwidth();
+    void update_sampling_rate();
+    void update_tx_gain();
+    void update_rf_amp();
+    void update_antenna_bias();
+    void on_tick_second();
 };
 
-#endif/*__TRANSMITTER_MODEL_H__*/
+#endif /*__TRANSMITTER_MODEL_H__*/

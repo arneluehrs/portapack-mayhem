@@ -33,40 +33,44 @@
 namespace audio {
 
 class Codec {
-public:
-	virtual ~Codec() { }
+   public:
+    virtual ~Codec() {}
 
-	virtual std::string name() const = 0;
+    virtual std::string name() const = 0;
 
-	virtual bool reset() = 0;
-	virtual void init() = 0;
+    virtual bool reset() = 0;
+    virtual void init() = 0;
 
-	virtual void speaker_enable() = 0;
- 	virtual void speaker_disable() = 0;
+    virtual void speaker_enable() = 0;
+    virtual void speaker_disable() = 0;
+    virtual bool speaker_disable_supported() const = 0;
 
-	virtual void headphone_enable() = 0;
-	virtual void headphone_disable() = 0;
-	virtual volume_range_t headphone_gain_range() const = 0;
-	virtual void set_headphone_volume(const volume_t volume) = 0;
+    virtual void headphone_enable() = 0;
+    virtual void headphone_disable() = 0;
+    virtual volume_range_t headphone_gain_range() const = 0;
+    virtual void set_headphone_volume(const volume_t volume) = 0;
 
-	virtual void microphone_enable(int8_t alc_mode) = 0;	// added user-GUI  AK4951 ,selected ALC mode.
-	virtual void microphone_disable() = 0;
+    virtual void microphone_enable(int8_t alc_mode) = 0;  // added user-GUI  AK4951 ,selected ALC mode.
+    virtual void microphone_disable() = 0;
 
-	virtual size_t reg_count() const = 0;
-	virtual size_t reg_bits() const = 0;
-	virtual uint32_t reg_read(const size_t register_number) = 0;
+    virtual size_t reg_count() const = 0;
+    virtual size_t reg_bits() const = 0;
+    virtual uint32_t reg_read(const size_t register_number) = 0;
 };
 
 namespace output {
 
-void start();		// this  other start(),no changed. ,in namespace output , used to config audio playback mode, 
+void start();  // this  other start(),no changed. ,in namespace output , used to config audio playback mode,
 void stop();
 
 void mute();
 void unmute();
 
+void speaker_disable();
+void speaker_enable();
 void speaker_mute();
 void speaker_unmute();
+void update_audio_mute();
 
 } /* namespace output */
 
@@ -104,15 +108,16 @@ size_t reg_bits();
 
 void init(audio::Codec* const codec);
 void shutdown();
+bool speaker_disable_supported();
 
 enum class Rate {
-	Hz_12000 = 4,
-	Hz_24000 = 2,
-	Hz_48000 = 1,
+    Hz_12000 = 4,
+    Hz_24000 = 2,
+    Hz_48000 = 1,
 };
 
 void set_rate(const Rate rate);
 
 } /* namespace audio */
 
-#endif/*__AUDIO_H__*/
+#endif /*__AUDIO_H__*/
