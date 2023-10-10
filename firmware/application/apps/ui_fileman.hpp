@@ -77,7 +77,8 @@ class FileManBaseView : public View {
         {u".C8", &bitmap_icon_file_iq, ui::Color::dark_cyan()},
         {u".C16", &bitmap_icon_file_iq, ui::Color::dark_cyan()},
         {u".WAV", &bitmap_icon_file_wav, ui::Color::dark_magenta()},
-        {u".PPL", &bitmap_icon_file_iq, ui::Color::white()},  // PPL is the file extension for playlist app
+        {u".PPL", &bitmap_icon_file_iq, ui::Color::white()},  // Playlist/Replay
+        {u".REM", &bitmap_icon_remote, ui::Color::orange()},  // Remote
         {u"", &bitmap_icon_file, ui::Color::light_grey()}     // NB: Must be last.
     };
 
@@ -114,11 +115,6 @@ class FileManBaseView : public View {
     MenuView menu_view{
         {0, 2 * 8, 240, 26 * 8},
         true};
-
-    // HACK: for item count limit.
-    Text text_info{
-        {1 * 8, 35 * 8, 15 * 8, 16},
-        ""};
 
     Button button_exit{
         {22 * 8, 34 * 8, 8 * 8, 32},
@@ -207,7 +203,7 @@ class FileManagerView : public FileManBaseView {
     ClipboardMode clipboard_mode{ClipboardMode::None};
 
     void refresh_widgets(const bool v);
-    void on_rename();
+    void on_rename(std::string_view hint);
     void on_delete();
     void on_paste();
     void on_new_dir();
@@ -218,11 +214,8 @@ class FileManagerView : public FileManBaseView {
     // True if the selected entry is a real file item.
     bool selected_is_valid() const;
 
-    Labels labels{
-        {{0, 26 * 8}, "Created ", Color::light_grey()}};
-
     Text text_date{
-        {8 * 8, 26 * 8, 19 * 8, 16},
+        {0 * 8, 26 * 8, 28 * 8, 16},
         ""};
 
     NewButton button_rename{
@@ -271,6 +264,19 @@ class FileManagerView : public FileManBaseView {
         {0 * 8, 34 * 8, 4 * 8, 32},
         {},
         &bitmap_icon_notepad,
+        Color::orange()};
+
+    NewButton button_rename_timestamp{
+        {4 * 8, 34 * 8, 4 * 8, 32},
+        {},
+        &bitmap_icon_options_datetime,
+        Color::orange(),
+        /*vcenter*/ true};
+
+    NewButton button_open_iq_trim{
+        {9 * 8, 34 * 8, 4 * 8, 32},
+        {},
+        &bitmap_icon_trim,
         Color::orange()};
 };
 

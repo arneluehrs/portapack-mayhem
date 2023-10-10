@@ -20,6 +20,7 @@
  */
 
 #include "ui_debug.hpp"
+#include "debug.hpp"
 
 #include "ch.h"
 
@@ -127,7 +128,7 @@ TemperatureWidget::temperature_t TemperatureWidget::temperature(const sample_t s
 }
 
 std::string TemperatureWidget::temperature_str(const temperature_t temperature) const {
-    return to_string_dec_int(temperature, temp_len - 1) + "C";
+    return to_string_dec_int(temperature, temp_len - 2) + STR_DEGREES_C;
 }
 
 Coord TemperatureWidget::screen_y(
@@ -251,7 +252,7 @@ void ControlsSwitchesWidget::on_show() {
 
 bool ControlsSwitchesWidget::on_key(const KeyEvent key) {
     key_event_mask = 1 << toUType(key);
-    long_press_key_event_mask = switch_long_press_occurred((size_t)key) ? key_event_mask : 0;
+    long_press_key_event_mask = key_is_long_pressed(key) ? key_event_mask : 0;
     return true;
 }
 
@@ -264,9 +265,9 @@ void ControlsSwitchesWidget::paint(Painter& painter) {
         {32, 64, 16, 16},  // Down
         {32, 0, 16, 16},   // Up
         {32, 32, 16, 16},  // Select
+        {96, 0, 16, 16},   // Dfu
         {16, 96, 16, 16},  // Encoder phase 0
         {48, 96, 16, 16},  // Encoder phase 1
-        {96, 0, 16, 16},   // Dfu
         {96, 64, 16, 16},  // Touch
     }};
 
@@ -283,9 +284,9 @@ void ControlsSwitchesWidget::paint(Painter& painter) {
         {32 + 1, 64 + 1, 16 - 2, 16 - 2},  // Down
         {32 + 1, 0 + 1, 16 - 2, 16 - 2},   // Up
         {32 + 1, 32 + 1, 16 - 2, 16 - 2},  // Select
+        {96 + 1, 0 + 1, 16 - 2, 16 - 2},   // Dfu
         {16 + 1, 96 + 1, 16 - 2, 16 - 2},  // Encoder phase 0
         {48 + 1, 96 + 1, 16 - 2, 16 - 2},  // Encoder phase 1
-        {96 + 1, 0 + 1, 16 - 2, 16 - 2},   // Dfu
     }};
 
     auto switches_raw = control::debug::switches();
@@ -354,13 +355,13 @@ DebugControlsView::DebugControlsView(NavigationView& nav) {
     });
 
     button_done.on_select = [&nav](Button&) {
-        switches_long_press_enable(0);
+        set_switches_long_press_config(0);
         nav.pop();
     };
 
     options_switches_mode.on_change = [this](size_t, OptionsField::value_t v) {
         (void)v;
-        switches_long_press_enable(options_switches_mode.selected_index_value());
+        set_switches_long_press_config(options_switches_mode.selected_index_value());
     };
 }
 
@@ -397,15 +398,17 @@ DebugMenuView::DebugMenuView(NavigationView& nav) {
         add_items({{"..", ui::Color::light_grey(), &bitmap_icon_previous, [&nav]() { nav.pop(); }}});
     }
     add_items({
+        {"Buttons Test", ui::Color::dark_cyan(), &bitmap_icon_controls, [&nav]() { nav.push<DebugControlsView>(); }},
+        {"Debug Dump", ui::Color::dark_cyan(), &bitmap_icon_memory, [&nav]() { portapack::persistent_memory::debug_dump(); }},
+        //{"Fonts Viewer", ui::Color::dark_cyan(), &bitmap_icon_notepad, [&nav]() { nav.push<DebugFontsView>(); }},  // temporarily disabled to conserve ROM space
+        {"M0 Stack Dump", ui::Color::dark_cyan(), &bitmap_icon_memory, [&nav]() { stack_dump(); }},
         {"Memory", ui::Color::dark_cyan(), &bitmap_icon_memory, [&nav]() { nav.push<DebugMemoryView>(); }},
+        {"P.Memory", ui::Color::dark_cyan(), &bitmap_icon_memory, [&nav]() { nav.push<DebugPmemView>(); }},
+        {"Peripherals", ui::Color::dark_cyan(), &bitmap_icon_peripherals, [&nav]() { nav.push<DebugPeripheralsMenuView>(); }},
         //{ "Radio State",	ui::Color::white(),	nullptr,	[&nav](){ nav.push<NotImplementedView>(); } },
         {"SD Card", ui::Color::dark_cyan(), &bitmap_icon_sdcard, [&nav]() { nav.push<SDCardDebugView>(); }},
-        {"Peripherals", ui::Color::dark_cyan(), &bitmap_icon_peripherals, [&nav]() { nav.push<DebugPeripheralsMenuView>(); }},
         {"Temperature", ui::Color::dark_cyan(), &bitmap_icon_temperature, [&nav]() { nav.push<TemperatureView>(); }},
-        {"Buttons Test", ui::Color::dark_cyan(), &bitmap_icon_controls, [&nav]() { nav.push<DebugControlsView>(); }},
-        {"P.Memory", ui::Color::dark_cyan(), &bitmap_icon_memory, [&nav]() { nav.push<DebugPmemView>(); }},
-        {"Fonts Viewer", ui::Color::dark_cyan(), &bitmap_icon_notepad, [&nav]() { nav.push<DebugFontsView>(); }},
-        {"Debug Dump", ui::Color::dark_cyan(), &bitmap_icon_memory, [&nav]() { portapack::persistent_memory::debug_dump(); }},
+        {"Touch Test", ui::Color::dark_cyan(), &bitmap_icon_notepad, [&nav]() { nav.push<DebugScreenTest>(); }},
     });
     set_max_rows(2);  // allow wider buttons
 }
@@ -499,6 +502,56 @@ void DebugFontsView::paint(Painter& painter) {
 DebugFontsView::DebugFontsView(NavigationView& nav)
     : nav_{nav} {
     set_focusable(true);
+}
+
+/* DebugScreenTest ****************************************************/
+
+DebugScreenTest::DebugScreenTest(NavigationView& nav)
+    : nav_{nav} {
+    set_focusable(true);
+}
+
+bool DebugScreenTest::on_key(const KeyEvent key) {
+    Painter painter;
+    switch (key) {
+        case KeyEvent::Select:
+            nav_.pop();
+            break;
+        case KeyEvent::Down:
+            painter.fill_rectangle({0, 0, screen_width, screen_height}, semirand());
+            break;
+        case KeyEvent::Left:
+            pen_color = semirand();
+            break;
+        default:
+            break;
+    }
+    return true;
+}
+
+bool DebugScreenTest::on_encoder(EncoderEvent delta) {
+    pen_size = clip<int32_t>(pen_size + delta, 1, screen_width);
+    return true;
+}
+
+bool DebugScreenTest::on_touch(const TouchEvent event) {
+    Painter painter;
+    pen_pos = event.point;
+    painter.fill_rectangle({pen_pos.x() - pen_size / 2, pen_pos.y() - pen_size / 2, pen_size, pen_size}, pen_color);
+    return true;
+}
+
+uint16_t DebugScreenTest::semirand() {
+    static uint64_t seed{0x0102030405060708};
+    seed = seed * 137;
+    seed = (seed >> 1) | ((seed & 0x01) << 63);
+    return (uint16_t)seed;
+}
+
+void DebugScreenTest::paint(Painter& painter) {
+    painter.fill_rectangle({0, 16, screen_width, screen_height - 16}, Color::white());
+    painter.draw_string({10 * 8, screen_height / 2}, Styles::white, "Use Stylus");
+    pen_color = semirand();
 }
 
 /* DebugLCRView *******************************************************/

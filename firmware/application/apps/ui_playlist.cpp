@@ -24,16 +24,18 @@
 
 #include "ui_playlist.hpp"
 
+#include "baseband_api.hpp"
 #include "convert.hpp"
 #include "file_reader.hpp"
 #include "io_file.hpp"
+#include "io_convert.hpp"
+#include "oversample.hpp"
+#include "portapack.hpp"
+#include "portapack_persistent_memory.hpp"
 #include "string_format.hpp"
 #include "ui_fileman.hpp"
 #include "utility.hpp"
 
-#include "baseband_api.hpp"
-#include "portapack.hpp"
-#include "portapack_persistent_memory.hpp"
 #include <unistd.h>
 #include <fstream>
 
@@ -48,7 +50,6 @@ namespace fs = std::filesystem;
 namespace ui {
 
 // TODO: consolidate extesions into a shared header?
-static const fs::path c16_ext = u".C16";
 static const fs::path ppl_ext = u".PPL";
 
 void PlaylistView::load_file(const fs::path& playlist_path) {
@@ -258,23 +259,22 @@ void PlaylistView::send_current_track() {
         chThdSleepMilliseconds(current()->ms_delay);
 
     // Open the sample file to send.
-    auto reader = std::make_unique<FileReader>();
+    auto reader = std::make_unique<FileConvertReader>();
     auto error = reader->open(current()->path);
     if (error) {
         show_file_error(current()->path, "Can't open file to send.");
         return;
     }
 
-    // ReplayThread starts immediately on construction so
-    // these need to be set before creating the ReplayThread.
-    transmitter_model.set_target_frequency(current()->metadata.center_frequency);
-    transmitter_model.set_sampling_rate(current()->metadata.sample_rate * 8);
-    transmitter_model.set_baseband_bandwidth(baseband_bandwidth);
-    transmitter_model.enable();
+    // Update the sample rate in proc_replay baseband.
+    baseband::set_sample_rate(current()->metadata.sample_rate,
+                              get_oversample_rate(current()->metadata.sample_rate));
 
-    // Set baseband sample rate too for waterfall to be correct.
-    // TODO: Why doesn't the transmitter_model just handle this?
-    baseband::set_sample_rate(transmitter_model.sampling_rate());
+    // ReplayThread starts immediately on construction; must be set before creating.
+    transmitter_model.set_target_frequency(current()->metadata.center_frequency);
+    transmitter_model.set_sampling_rate(get_actual_sample_rate(current()->metadata.sample_rate));
+    transmitter_model.set_baseband_bandwidth(current()->metadata.sample_rate <= 500'000 ? 1'750'000 : 2'500'000);  // TX LPF min 1M75 for SR <=500K, and  2M5 (by experimental test) for SR >500K
+    transmitter_model.enable();
 
     // Reset the transmit progress bar.
     progressbar_transmit.set_value(0);
@@ -323,9 +323,10 @@ void PlaylistView::update_ui() {
         chDbgAssert(!at_end(), "update_ui #1", "current_index_ invalid");
 
         text_filename.set(current()->path.filename().string());
-        text_sample_rate.set(unit_auto_scale(current()->metadata.sample_rate, 3, 0) + "Hz");
+        text_sample_rate.set(unit_auto_scale(current()->metadata.sample_rate, 3, (current()->metadata.sample_rate > 1000000) ? 2 : 0) + "Hz");
 
-        auto duration = ms_duration(current()->file_size, current()->metadata.sample_rate, 4);
+        uint8_t sample_size = capture_file_sample_size(current()->path);
+        auto duration = ms_duration(current()->file_size, current()->metadata.sample_rate, sample_size);
         text_duration.set(to_string_time_ms(duration));
         field_frequency.set_value(current()->metadata.center_frequency);
 
@@ -336,7 +337,7 @@ void PlaylistView::update_ui() {
 
         progressbar_track.set_max(playlist_db_.size() - 1);
         progressbar_track.set_value(current_index_);
-        progressbar_transmit.set_max(current()->file_size);
+        progressbar_transmit.set_max(current()->file_size * sizeof(complex16_t) / sample_size);
     }
 
     button_play.set_bitmap(is_active() ? &bitmap_stop : &bitmap_play);
@@ -385,6 +386,7 @@ PlaylistView::PlaylistView(
         &waterfall,
     });
 
+    ensure_directory(u"PLAYLIST");
     waterfall.show_audio_spectrum_view(false);
 
     field_frequency.set_value(100'000'000);
@@ -406,7 +408,7 @@ PlaylistView::PlaylistView(
     button_add.on_select = [this, &nav]() {
         if (is_active())
             return;
-        auto open_view = nav_.push<FileLoadView>(".C16");
+        auto open_view = nav_.push<FileLoadView>(".C*");
         open_view->push_dir(u"CAPTURES");
         open_view->on_changed = [this](fs::path path) {
             add_entry(std::move(path));
@@ -459,7 +461,7 @@ PlaylistView::PlaylistView(
     auto ext = path.extension();
     if (path_iequal(ext, ppl_ext))
         on_file_changed(path);
-    else if (path_iequal(ext, c16_ext))
+    else if (is_cxx_capture_file(path))
         add_entry(fs::path{path});
 }
 

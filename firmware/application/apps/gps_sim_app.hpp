@@ -24,9 +24,6 @@
 #ifndef __GPS_SIM_APP_HPP__
 #define __GPS_SIM_APP_HPP__
 
-#define SHORT_UI true
-#define NORMAL_UI false
-
 #include "app_settings.hpp"
 #include "radio_state.hpp"
 #include "ui_widget.hpp"
@@ -54,6 +51,8 @@ class GpsSimAppView : public View {
     std::string title() const override { return "GPS Sim TX"; };
 
    private:
+    static constexpr uint32_t initial_target_frequency = 1575420000;
+
     NavigationView& nav_;
     RxRadioState radio_state_{
         3000000 /* bandwidth */,
@@ -64,7 +63,6 @@ class GpsSimAppView : public View {
 
     static constexpr ui::Dim header_height = 3 * 16;
 
-    uint32_t sample_rate = 0;
     int32_t tx_gain{47};
     bool rf_amp{true};                                       // aux private var to store temporal, same as Replay App rf_amp user selection.
     static constexpr uint32_t baseband_bandwidth = 3000000;  // filter bandwidth
@@ -108,10 +106,8 @@ class GpsSimAppView : public View {
         nav_};
 
     TransmitterView2 tx_view{
-        // new handling of NumberField field_rfgain, NumberField field_rfamp
-        74, 1 * 8, SHORT_UI  // x(columns), y (line) position. (Used in Replay / GPS Simul / Playlist App)
-                             //		10*8, 2*8, NORMAL_UI				// x(columns), y (line) position. (Used in Mic App)
-    };
+        {11 * 8, 2 * 16},
+        /*short_ui*/ true};
 
     Checkbox check_loop{
         {21 * 8, 2 * 16},

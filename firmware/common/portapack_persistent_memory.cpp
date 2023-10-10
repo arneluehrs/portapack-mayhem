@@ -80,7 +80,7 @@ constexpr clkout_freq_range_t clkout_freq_range{10, 60000};
 constexpr uint16_t clkout_freq_reset_value{10000};
 
 enum data_structure_version_enum : uint32_t {
-    VERSION_CURRENT = 0x10000004,
+    VERSION_CURRENT = 0x10000005,
 };
 
 static const uint32_t TOUCH_CALIBRATION_MAGIC = 0x074af82f;
@@ -142,7 +142,7 @@ static_assert(sizeof(ui_config2_t) == sizeof(uint32_t));
 struct misc_config_t {
     bool mute_audio : 1;
     bool disable_speaker : 1;
-    bool UNUSED_2 : 1;
+    bool config_disable_external_tcxo : 1;
     bool UNUSED_3 : 1;
     bool UNUSED_4 : 1;
     bool UNUSED_5 : 1;
@@ -226,6 +226,9 @@ struct data_t {
     // Additional UI settings.
     ui_config2_t ui_config2;
 
+    // recovery mode magic value storage
+    uint32_t config_mode_storage;
+
     constexpr data_t()
         : structure_version(data_structure_version_enum::VERSION_CURRENT),
           target_frequency(target_frequency_reset_value),
@@ -269,11 +272,12 @@ struct data_t {
           frequency_rx_correction(0),
           frequency_tx_correction(0),
 
-          encoder_dial_sensitivity(0),
+          encoder_dial_sensitivity(DIAL_SENSITIVITY_NORMAL),
           UNUSED_8(0),
           headphone_volume_cb(-600),
           misc_config(),
-          ui_config2() {
+          ui_config2(),
+          config_mode_storage(CONFIG_MODE_NORMAL_VALUE) {
     }
 };
 
@@ -363,6 +367,9 @@ void defaults() {
 
     set_config_backlight_timer(backlight_config_t{});
     set_config_splash(true);
+    set_config_disable_external_tcxo(false);
+    set_encoder_dial_sensitivity(DIAL_SENSITIVITY_NORMAL);
+    set_config_speaker_disable(true);  // Disable AK4951 speaker by default (in case of OpenSourceSDRLab H2)
 
     // Default values for recon app.
     set_recon_autosave_freqs(false);
@@ -378,6 +385,10 @@ void defaults() {
 
 void init() {
     const auto switches_state = get_switches_state();
+
+    // ignore for valid check
+    auto config_mode_backup = config_mode_storage();
+    set_config_mode_storage(CONFIG_MODE_NORMAL_VALUE);
     if (!(switches_state[(size_t)ui::KeyEvent::Left] && switches_state[(size_t)ui::KeyEvent::Right]) && backup_ram->is_valid()) {
         // Copy valid persistent data into cache.
         cached_backup_ram = *backup_ram;
@@ -393,6 +404,7 @@ void init() {
         // Copy defaults into cache.
         defaults();
     }
+    set_config_mode_storage(config_mode_backup);
 }
 
 void persist() {
@@ -548,6 +560,10 @@ bool config_speaker_disable() {
     return data->misc_config.disable_speaker;
 }
 
+bool config_disable_external_tcxo() {
+    return data->misc_config.config_disable_external_tcxo;
+}
+
 bool stealth_mode() {
     return data->ui_config.stealth_mode;
 }
@@ -607,6 +623,10 @@ void set_config_audio_mute(bool v) {
 
 void set_config_speaker_disable(bool v) {
     data->misc_config.disable_speaker = v;
+}
+
+void set_config_disable_external_tcxo(bool v) {
+    data->misc_config.config_disable_external_tcxo = v;
 }
 
 void set_stealth_mode(bool v) {
@@ -838,6 +858,16 @@ void set_encoder_dial_sensitivity(uint8_t v) {
     data->encoder_dial_sensitivity = v;
 }
 
+// Recovery mode magic value storage
+static data_t* data_direct_access = reinterpret_cast<data_t*>(memory::map::backup_ram.base());
+
+uint32_t config_mode_storage() {
+    return data_direct_access->config_mode_storage;
+}
+void set_config_mode_storage(uint32_t v) {
+    data_direct_access->config_mode_storage = v;
+}
+
 // PMem to sdcard settings
 
 bool should_use_sdcard_for_pmem() {
@@ -963,6 +993,8 @@ bool debug_dump() {
     // misc_config bits
     pmem_dump_file.write_line("misc_config config_audio_mute: " + to_string_dec_int(config_audio_mute()));
     pmem_dump_file.write_line("misc_config config_speaker_disable: " + to_string_dec_int(config_speaker_disable()));
+    pmem_dump_file.write_line("ui_config config_disable_external_tcxo: " + to_string_dec_uint(config_disable_external_tcxo()));
+
     // receiver_model
     pmem_dump_file.write_line("\n[Receiver Model]");
     pmem_dump_file.write_line("target_frequency: " + to_string_dec_uint(receiver_model.target_frequency()));

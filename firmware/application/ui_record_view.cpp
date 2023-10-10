@@ -26,14 +26,17 @@ using namespace portapack;
 
 #include "io_file.hpp"
 #include "io_wave.hpp"
+#include "io_convert.hpp"
 
 #include "baseband_api.hpp"
 #include "metadata_file.hpp"
+#include "oversample.hpp"
 #include "rtc_time.hpp"
 #include "string_format.hpp"
 #include "utility.hpp"
 
 #include <cstdint>
+#include <vector>
 
 namespace ui {
 
@@ -100,24 +103,24 @@ void RecordView::focus() {
     button_record.focus();
 }
 
-void RecordView::set_sampling_rate(const size_t new_sampling_rate) {
-    /* We are changing "REC" icon background to yellow in  BW rec Options >600kHz
-        where we are NOT recording full IQ .C16 files (recorded files are decimated ones).
-        Those decimated recorded files,has not the full IQ  samples .
-        are ok as recorded spectrum indication, but they  should not be used by Replay app.
+uint32_t RecordView::set_sampling_rate(uint32_t new_sampling_rate) {
+    // Determine the oversampling needed (if any) and the actual sampling rate.
+    auto oversample_rate = get_oversample_rate(new_sampling_rate);
+    auto actual_sampling_rate = new_sampling_rate * toUType(oversample_rate);
 
-        We keep original black  background in all the correct IQ .C16 files BW's Options */
-    if (new_sampling_rate > 4800000) {  // > BW >600kHz  (fs=8*BW), (750kHz ...2750kHz)
+    // Change the "REC" icon background to yellow when the selected rate exceeds hardware limits.
+    // Above this threshold, samples will be dropped resulting incomplete capture files.
+    if (new_sampling_rate > 1'250'000) {
         button_record.set_background(ui::Color::yellow());
     } else {
         button_record.set_background(ui::Color::black());
     }
 
-    if (new_sampling_rate != sampling_rate) {
+    if (sampling_rate != new_sampling_rate) {
         stop();
 
         sampling_rate = new_sampling_rate;
-        baseband::set_sample_rate(sampling_rate);
+        baseband::set_sample_rate(sampling_rate, oversample_rate);
 
         button_record.hidden(sampling_rate == 0);
         text_record_filename.hidden(sampling_rate == 0);
@@ -127,6 +130,16 @@ void RecordView::set_sampling_rate(const size_t new_sampling_rate) {
 
         update_status_display();
     }
+
+    return actual_sampling_rate;
+}
+
+OversampleRate RecordView::get_oversample_rate(uint32_t sample_rate) {
+    // No oversampling necessary for baseband audio processors.
+    if (file_type == FileType::WAV)
+        return OversampleRate::None;
+
+    return ::get_oversample_rate(sample_rate);
 }
 
 // Setter for datetime and frequency filename
@@ -151,6 +164,7 @@ void RecordView::start() {
 
     text_record_filename.set("");
     text_record_dropped.set("");
+    trim_path = {};
 
     if (sampling_rate == 0) {
         return;
@@ -161,12 +175,13 @@ void RecordView::start() {
         rtcGetTime(&RTCD1, &datetime);
 
         // ISO 8601
-        std::string date_time = to_string_dec_uint(datetime.year(), 4, '0') +
-                                to_string_dec_uint(datetime.month(), 2, '0') +
-                                to_string_dec_uint(datetime.day(), 2, '0') + "T" +
-                                to_string_dec_uint(datetime.hour()) +
-                                to_string_dec_uint(datetime.minute()) +
-                                to_string_dec_uint(datetime.second());
+        std::string date_time =
+            to_string_dec_uint(datetime.year(), 4, '0') +
+            to_string_dec_uint(datetime.month(), 2, '0') +
+            to_string_dec_uint(datetime.day(), 2, '0') + "T" +
+            to_string_dec_uint(datetime.hour()) +
+            to_string_dec_uint(datetime.minute()) +
+            to_string_dec_uint(datetime.second());
 
         base_path = filename_stem_pattern.string() + "_" + date_time + "_" +
                     trim(to_string_freq(receiver_model.target_frequency())) + "Hz";
@@ -194,18 +209,18 @@ void RecordView::start() {
             }
         } break;
 
+        case FileType::RawS8:
         case FileType::RawS16: {
-            const auto metadata_file_error =
-                write_metadata_file(get_metadata_path(base_path),
-                                    {receiver_model.target_frequency(), sampling_rate / 8});
-            // Not sure why sample_rate is div. 8, but stored value matches rate settings.
+            const auto metadata_file_error = write_metadata_file(
+                get_metadata_path(base_path), {receiver_model.target_frequency(), sampling_rate});
             if (metadata_file_error.is_valid()) {
                 handle_error(metadata_file_error.value());
                 return;
             }
 
-            auto p = std::make_unique<RawFileWriter>();
-            auto create_error = p->create(base_path.replace_extension(u".C16"));
+            auto p = std::make_unique<FileConvertWriter>();
+            trim_path = base_path.replace_extension((file_type == FileType::RawS8) ? u".C8" : u".C16");
+            auto create_error = p->create(trim_path);
             if (create_error.is_valid()) {
                 handle_error(create_error.value());
             } else {
@@ -245,6 +260,7 @@ void RecordView::stop() {
     if (is_active()) {
         capture_thread.reset();
         button_record.set_bitmap(&bitmap_record);
+        trim_capture();
     }
 
     update_status_display();
@@ -261,13 +277,19 @@ void RecordView::update_status_display() {
         text_record_dropped.set(s);
     }
 
-    /*if (pitch_rssi_enabled) {
-                button_pitch_rssi.invert_colors();
-        }*/
+    /*
+    if (pitch_rssi_enabled) {
+        button_pitch_rssi.invert_colors();
+    }
+    */
 
-    if (sampling_rate) {
+    if (sampling_rate > 0) {
         const auto space_info = std::filesystem::space(u"");
-        const uint32_t bytes_per_second = file_type == FileType::WAV ? (sampling_rate * 2) : (sampling_rate / 8 * 4);  // TODO: Why 8/4??
+        // - Audio is 1 int16_t per sample or '2' bytes per sample.
+        // - C8 captures 2 (I,Q) int8_t per sample or '2' bytes per sample.
+        // - C16 captures 2 (I,Q) int16_t per sample or '4' bytes per sample.
+        const auto bytes_per_sample = file_type == FileType::RawS16 ? 4 : 2;
+        const uint32_t bytes_per_second = sampling_rate * bytes_per_sample;
         const uint32_t available_seconds = space_info.free / bytes_per_second;
         const uint32_t seconds = available_seconds % 60;
         const uint32_t available_minutes = available_seconds / 60;
@@ -279,6 +301,34 @@ void RecordView::update_status_display() {
             to_string_dec_uint(seconds, 2, '0');
         text_time_available.set(available_time);
     }
+}
+
+void RecordView::trim_capture() {
+    using bucket_t = iq::PowerBuckets::Bucket;
+
+    if (file_type != FileType::WAV && auto_trim && !trim_path.empty()) {
+        // Need to heap alloc the buckets in this case. The large static buffer overflows the stack.
+        std::vector<bucket_t> buckets(size_t(255), bucket_t{});
+        ;
+        iq::PowerBuckets power_buckets{
+            .p = &buckets[0],
+            .size = buckets.size()};
+
+        trim_ui.show_reading();
+        auto info = iq::profile_capture(trim_path, power_buckets);
+
+        if (info) {
+            // 7% - decent trimming without being too aggressive.
+            auto trim_range = iq::compute_trim_range(*info, power_buckets, 7);
+
+            trim_ui.show_trimming();
+            iq::trim_capture_with_range(trim_path, trim_range, trim_ui.get_callback());
+        }
+
+        trim_ui.clear();
+    }
+
+    trim_path = {};
 }
 
 void RecordView::handle_capture_thread_done(const File::Error error) {

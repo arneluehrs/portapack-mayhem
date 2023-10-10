@@ -69,10 +69,9 @@ ReconSetupViewMain::ReconSetupViewMain(NavigationView& nav, Rect parent_rect, st
 
     button_save_freqs.on_select = [this, &nav](Button&) {
         auto open_view = nav.push<FileLoadView>(".TXT");
+        open_view->push_dir(freqman_dir);
         open_view->on_changed = [this, &nav](std::filesystem::path new_file_path) {
-            std::string dir_filter = "FREQMAN/";
-            std::string str_file_path = new_file_path.string();
-            if (str_file_path.find(dir_filter) != string::npos) {  // assert file from the FREQMAN folder
+            if (new_file_path.native().find(freqman_dir.native()) == 0) {
                 _output_file = new_file_path.stem().string();
                 button_output_file.set_text(_output_file);
             } else {
@@ -84,7 +83,7 @@ ReconSetupViewMain::ReconSetupViewMain(NavigationView& nav, Rect parent_rect, st
     button_output_file.on_select = [this, &nav](Button&) {
         text_prompt(nav, _output_file, 28,
                     [this](std::string& buffer) {
-                        _output_file = buffer;
+                        _output_file = std::move(buffer);
                         button_output_file.set_text(_output_file);
                     });
     };

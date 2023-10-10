@@ -23,6 +23,7 @@
 #include "capture_app.hpp"
 #include "baseband_api.hpp"
 #include "portapack.hpp"
+#include "ui_freqman.hpp"
 
 using namespace portapack;
 
@@ -30,7 +31,6 @@ namespace ui {
 
 CaptureAppView::CaptureAppView(NavigationView& nav)
     : nav_{nav} {
-    freqman_set_bandwidth_option(SPEC_MODULATION, option_bandwidth);
     baseband::run_image(portapack::spi_flash::image_tag_capture);
 
     add_children({
@@ -43,6 +43,8 @@ CaptureAppView::CaptureAppView(NavigationView& nav)
         &field_lna,
         &field_vga,
         &option_bandwidth,
+        &option_format,
+        &check_trim,
         &record_view,
         &waterfall,
     });
@@ -53,25 +55,49 @@ CaptureAppView::CaptureAppView(NavigationView& nav)
         this->field_frequency.set_step(v);
     };
 
-    option_bandwidth.on_change = [this](size_t, uint32_t base_rate) {
-        sampling_rate = 8 * base_rate;  // Decimation by 8 done on baseband side
-                                        /* base_rate is used for FFT calculation and display LCD, and also in recording writing SD Card rate. */
-        /* ex. sampling_rate values, 4Mhz, when recording 500 kHz (BW) and fs 8 Mhz, when selected 1 Mhz BW ... */
-        /* ex. recording 500kHz BW to .C16 file, base_rate clock 500kHz x2(I,Q) x 2 bytes (int signed) =2MB/sec rate SD Card  */
-        waterfall.on_hide();
-
-        /* Set up proper anti aliasing BPF bandwith in MAX2837 before ADC sampling according to the new added BW Options. */
-        auto anti_alias_baseband_bandwidth_filter = filter_bandwidth_for_sampling_rate(sampling_rate);
-
-        record_view.set_sampling_rate(sampling_rate);
-        receiver_model.set_sampling_rate(sampling_rate);
-        receiver_model.set_baseband_bandwidth(anti_alias_baseband_bandwidth_filter);
-
-        waterfall.on_show();
+    option_format.set_selected_index(0);  // Default to C16
+    option_format.on_change = [this](size_t, uint32_t file_type) {
+        record_view.set_file_type((RecordView::FileType)file_type);
     };
 
-    option_bandwidth.set_selected_index(7);  // Preselected default option 500kHz.
+    check_trim.on_select = [this](Checkbox&, bool v) {
+        record_view.set_auto_trim(v);
+    };
+
+    freqman_set_bandwidth_option(SPEC_MODULATION, option_bandwidth);
+    option_bandwidth.on_change = [this](size_t, uint32_t bandwidth) {
+        /* Nyquist would imply a sample rate of 2x bandwidth, but because the ADC
+         * provides 2 values (I,Q), the sample_rate is equal to bandwidth here. */
+        auto sample_rate = bandwidth;
+
+        /* base_rate (bandwidth) is used for FFT calculation and display LCD, and also in recording writing SD Card rate. */
+        /* ex. sampling_rate values, 4Mhz, when recording 500 kHz (BW) and fs 8 Mhz, when selected 1 Mhz BW ... */
+        /* ex. recording 500kHz BW to .C16 file, base_rate clock 500kHz x2(I,Q) x 2 bytes (int signed) =2MB/sec rate SD Card. */
+
+        waterfall.stop();
+
+        // record_view determines the correct oversampling to apply and returns the actual sample rate.
+        // NB: record_view is what actually updates proc_capture baseband settings.
+        auto actual_sample_rate = record_view.set_sampling_rate(sample_rate);
+
+        // Update the radio model with the actual sampling rate.
+        receiver_model.set_sampling_rate(actual_sample_rate);
+
+        // Get suitable anti-aliasing BPF bandwidth for MAX2837 given the actual sample rate.
+        auto anti_alias_filter_bandwidth = filter_bandwidth_for_sampling_rate(actual_sample_rate);
+        receiver_model.set_baseband_bandwidth(anti_alias_filter_bandwidth);
+
+        // Automatically switch default capture format to C8 when bandwidth setting is increased to >=1.5MHz
+        if ((bandwidth >= 1500000) && (previous_bandwidth < 1500000)) {
+            option_format.set_selected_index(1);
+        }
+        previous_bandwidth = bandwidth;
+
+        waterfall.start();
+    };
+
     receiver_model.enable();
+    option_bandwidth.set_by_value(500000);
 
     record_view.on_error = [&nav](std::string message) {
         nav.display_modal("Error", message);
@@ -81,11 +107,6 @@ CaptureAppView::CaptureAppView(NavigationView& nav)
 CaptureAppView::~CaptureAppView() {
     receiver_model.disable();
     baseband::shutdown();
-}
-
-void CaptureAppView::on_hide() {
-    waterfall.on_hide();
-    View::on_hide();
 }
 
 void CaptureAppView::set_parent_rect(const Rect new_parent_rect) {

@@ -21,11 +21,16 @@
  */
 
 #include "file.hpp"
+#include "complex.hpp"
 
 #include <algorithm>
 #include <codecvt>
 #include <cstring>
 #include <locale>
+
+namespace fs = std::filesystem;
+static const fs::path c8_ext{u".C8"};
+static const fs::path c16_ext{u".C16"};
 
 Optional<File::Error> File::open_fatfs(const std::filesystem::path& filename, BYTE mode) {
     auto result = f_open(&f, reinterpret_cast<const TCHAR*>(filename.c_str()), mode);
@@ -45,8 +50,11 @@ Optional<File::Error> File::open_fatfs(const std::filesystem::path& filename, BY
     }
 }
 
-Optional<File::Error> File::open(const std::filesystem::path& filename, bool read_only) {
+Optional<File::Error> File::open(const std::filesystem::path& filename, bool read_only, bool create) {
     BYTE mode = read_only ? FA_READ : FA_READ | FA_WRITE;
+    if (create)
+        mode |= FA_OPEN_ALWAYS;
+
     return open_fatfs(filename, mode);
 }
 
@@ -284,8 +292,7 @@ std::filesystem::filesystem_error rename_file(
 std::filesystem::filesystem_error copy_file(
     const std::filesystem::path& file_path,
     const std::filesystem::path& dest_path) {
-    // 512 seems to be the largest block size FatFS likes.
-    constexpr size_t buffer_size = 512;
+    constexpr size_t buffer_size = std::filesystem::max_file_block_size;
     uint8_t buffer[buffer_size];
     File src;
     File dst;
@@ -316,6 +323,14 @@ FATTimestamp file_created_date(const std::filesystem::path& file_path) {
     f_stat(reinterpret_cast<const TCHAR*>(file_path.c_str()), &filinfo);
 
     return {filinfo.fdate, filinfo.ftime};
+}
+
+std::filesystem::filesystem_error file_update_date(const std::filesystem::path& file_path, FATTimestamp timestamp) {
+    FILINFO filinfo{};
+
+    filinfo.fdate = timestamp.FAT_date;
+    filinfo.ftime = timestamp.FAT_time;
+    return f_utime(reinterpret_cast<const TCHAR*>(file_path.c_str()), &filinfo);
 }
 
 std::filesystem::filesystem_error make_new_file(
@@ -504,6 +519,19 @@ bool path_iequal(
     return false;
 }
 
+bool is_cxx_capture_file(const path& filename) {
+    auto ext = filename.extension();
+    return path_iequal(c8_ext, ext) || path_iequal(c16_ext, ext);
+}
+
+uint8_t capture_file_sample_size(const path& filename) {
+    if (path_iequal(filename.extension(), c8_ext))
+        return sizeof(complex8_t);
+    if (path_iequal(filename.extension(), c16_ext))
+        return sizeof(complex16_t);
+    return 0;
+}
+
 directory_iterator::directory_iterator(
     const std::filesystem::path& path,
     const std::filesystem::path& wild)
@@ -545,6 +573,28 @@ bool is_directory(const path& file_path) {
     auto fr = f_stat(reinterpret_cast<const TCHAR*>(file_path.c_str()), &filinfo);
 
     return fr == FR_OK && is_directory(static_cast<file_status>(filinfo.fattrib));
+}
+
+bool is_empty_directory(const path& file_path) {
+    DIR dir;
+    FILINFO filinfo;
+
+    if (!is_directory(file_path))
+        return false;
+
+    auto result = f_findfirst(&dir, &filinfo, reinterpret_cast<const TCHAR*>(file_path.c_str()), (const TCHAR*)u"*");
+    return !((result == FR_OK) && (filinfo.fname[0] != (TCHAR)'\0'));
+}
+
+int file_count(const path& directory) {
+    int count{0};
+
+    for (auto& entry : std::filesystem::directory_iterator(directory, (const TCHAR*)u"*")) {
+        (void)entry;  // avoid unused warning
+        ++count;
+    }
+
+    return count;
 }
 
 space_info space(const path& p) {

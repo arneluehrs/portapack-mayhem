@@ -22,12 +22,15 @@
 #ifndef __UTILITY_H__
 #define __UTILITY_H__
 
-#include <type_traits>
+#include <algorithm>
+#include <array>
+#include <complex>
 #include <cstdint>
 #include <cstddef>
-#include <algorithm>
-#include <complex>
+#include <initializer_list>
 #include <memory>
+#include <string_view>
+#include <type_traits>
 
 #define LOCATE_IN_RAM __attribute__((section(".ramtext")))
 
@@ -51,6 +54,12 @@ template <typename E>
 constexpr typename std::underlying_type<E>::type toUType(E enumerator) noexcept {
     /* Thanks, Scott Meyers! */
     return static_cast<typename std::underlying_type<E>::type>(enumerator);
+}
+
+/* Increments an enum value. Enumerator values are assumed to be serial. */
+template <typename E>
+void incr(E& e) {
+    e = static_cast<E>(toUType(e) + 1);
 }
 
 inline uint32_t flp2(uint32_t v) {
@@ -135,6 +144,16 @@ constexpr std::enable_if_t<is_flags_type_v<TEnum>, bool> flags_enabled(TEnum val
     return (i_value & i_flags) == i_flags;
 }
 
+// TODO: Constrain to integrals?
+/* Converts an integer into a byte array. */
+template <typename T, size_t N = sizeof(T)>
+constexpr std::array<uint8_t, N> to_byte_array(T value) {
+    std::array<uint8_t, N> bytes{};
+    for (size_t i = 0; i < N; ++i)
+        bytes[i] = (value >> ((N - i - 1) * 8)) & 0xFF;
+    return bytes;
+}
+
 /* Returns value constrained to min and max. */
 template <class T>
 constexpr const T& clip(const T& value, const T& minimum, const T& maximum) {
@@ -180,15 +199,22 @@ struct range_t {
         return value < minimum;
     }
 
+    /* Exclusive of maximum. */
     constexpr bool contains(const T& value) const {
-        // TODO: Subtle gotcha here! Range test doesn't include maximum!
         return (value >= minimum) && (value < maximum);
     }
 
+    /* Inclusive of maximum. */
+    constexpr bool contains_inc(const T& value) const {
+        return (value >= minimum) && (value <= maximum);
+    }
+
+    /* Exclusive of maximum. */
     constexpr bool out_of_range(const T& value) const {
-        // TODO: Subtle gotcha here! Range test in contains() doesn't include maximum!
         return !contains(value);
     }
 };
+
+std::string join(char c, std::initializer_list<std::string_view> strings);
 
 #endif /*__UTILITY_H__*/

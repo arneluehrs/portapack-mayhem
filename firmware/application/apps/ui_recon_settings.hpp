@@ -31,9 +31,6 @@
 #include "ui_navigation.hpp"
 #include "string_format.hpp"
 
-// maximum usable freq
-#define MAX_UFREQ 7200000000
-
 // 1Mhz helper
 #ifdef OneMHz
 #undef OneMHz
@@ -49,6 +46,8 @@
 
 // maximum lock duration
 #define RECON_MAX_LOCK_DURATION 9900
+
+#define RECON_DEF_SQUELCH -14
 
 // default number of match to have a lock
 #define RECON_DEF_NB_MATCH 3

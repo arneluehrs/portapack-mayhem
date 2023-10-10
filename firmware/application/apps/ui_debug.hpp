@@ -105,7 +105,7 @@ class TemperatureWidget : public Widget {
     static constexpr temperature_t display_temp_min = -10;  // Accomodate negative values, present in cold startup cases
     static constexpr temperature_t display_temp_scale = 3;
     static constexpr int bar_width = 1;
-    static constexpr int temp_len = 4;  // Now scale shows up to 4 chars ("-10C")
+    static constexpr int temp_len = 5;  // Now scale shows up to 5 chars ("-10ºC")
 };
 
 class TemperatureView : public View {
@@ -319,6 +319,22 @@ class DebugFontsView : public View {
    private:
     uint16_t display_font(Painter& painter, uint16_t y_offset, const Style* font_style, std::string_view font_name);
     NavigationView& nav_;
+};
+
+class DebugScreenTest : public View {
+   public:
+    DebugScreenTest(NavigationView& nav);
+    bool on_key(KeyEvent key) override;
+    bool on_encoder(EncoderEvent delta) override;
+    bool on_touch(TouchEvent event) override;
+    uint16_t semirand();
+    void paint(Painter& painter) override;
+
+   private:
+    NavigationView& nav_;
+    Point pen_pos{};
+    Color pen_color{0};
+    int16_t pen_size{10};
 };
 
 /*class DebugLCRView : public View {

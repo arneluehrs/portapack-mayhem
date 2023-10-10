@@ -34,19 +34,16 @@
 #include <array>
 #include <memory>
 
-class ReplayProcessor : public BasebandProcessor {
+class GPSReplayProcessor : public BasebandProcessor {
    public:
-    ReplayProcessor();
+    GPSReplayProcessor();
 
     void execute(const buffer_c8_t& buffer) override;
-
     void on_message(const Message* const message) override;
 
    private:
-    size_t baseband_fs = 0;
+    size_t baseband_fs = 3072000;
     static constexpr auto spectrum_rate_hz = 50.0f;
-
-    BasebandThread baseband_thread{baseband_fs, this, NORMALPRIO + 20, baseband::Direction::Transmit};
 
     std::array<complex8_t, 2048> iq{};
     const buffer_c8_t iq_buffer{
@@ -67,11 +64,15 @@ class ReplayProcessor : public BasebandProcessor {
     bool configured{false};
     uint32_t bytes_read{0};
 
-    void samplerate_config(const SamplerateConfigMessage& message);
+    void sample_rate_config(const SampleRateConfigMessage& message);
     void replay_config(const ReplayConfigMessage& message);
 
     TXProgressMessage txprogress_message{};
     RequestSignalMessage sig_message{RequestSignalMessage::Signal::FillRequest};
+
+    /* NB: Threads should be the last members in the class definition. */
+    BasebandThread baseband_thread{
+        baseband_fs, this, baseband::Direction::Transmit, /*auto_start*/ false};
 };
 
 #endif /*__PROC_GPS_SIM_HPP__*/

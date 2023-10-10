@@ -78,7 +78,7 @@ class Message {
         ReplayThreadDone = 21,
         AFSKRxConfigure = 22,
         StatusRefresh = 23,
-        SamplerateConfig = 24,
+        SampleRateConfig = 24,
         BTLERxConfigure = 25,
         NRFRxConfigure = 26,
         TXProgress = 27,
@@ -111,6 +111,7 @@ class Message {
         APRSRxConfigure = 54,
         SpectrumPainterBufferRequestConfigure = 55,
         SpectrumPainterBufferResponseConfigure = 56,
+        POCSAGStats = 57,
         MAX
     };
 
@@ -338,6 +339,26 @@ class POCSAGPacketMessage : public Message {
     }
 
     pocsag::POCSAGPacket packet;
+};
+
+class POCSAGStatsMessage : public Message {
+   public:
+    constexpr POCSAGStatsMessage(
+        uint32_t current_bits,
+        uint8_t current_frames,
+        bool has_sync,
+        uint16_t baud_rate)
+        : Message{ID::POCSAGStats},
+          current_bits{current_bits},
+          current_frames{current_frames},
+          has_sync{has_sync},
+          baud_rate{baud_rate} {
+    }
+
+    uint32_t current_bits = 0;
+    uint8_t current_frames = 0;
+    bool has_sync = false;
+    uint16_t baud_rate = 0;
 };
 
 class ACARSPacketMessage : public Message {
@@ -798,15 +819,40 @@ class RetuneMessage : public Message {
     uint32_t range = 0;
 };
 
-class SamplerateConfigMessage : public Message {
+/* Oversample/Interpolation sample rate multipliers. */
+enum class OversampleRate : uint8_t {
+    /* Use either to indicate there's no oversampling needed. */
+    None = 1,
+    x1 = None,
+
+    /* Oversample rate of 4 times the sample rate. */
+    x4 = 4,
+
+    /* Oversample rate of 8 times the sample rate. */
+    x8 = 8,
+
+    /* Oversample rate of 16 times the sample rate. */
+    x16 = 16,
+
+    /* Oversample rate of 32 times the sample rate. */
+    x32 = 32,
+
+    /* Oversample rate of 64 times the sample rate. */
+    x64 = 64,
+};
+
+class SampleRateConfigMessage : public Message {
    public:
-    constexpr SamplerateConfigMessage(
-        const uint32_t sample_rate)
-        : Message{ID::SamplerateConfig},
-          sample_rate(sample_rate) {
+    constexpr SampleRateConfigMessage(
+        uint32_t sample_rate,
+        OversampleRate oversample_rate)
+        : Message{ID::SampleRateConfig},
+          sample_rate(sample_rate),
+          oversample_rate(oversample_rate) {
     }
 
     const uint32_t sample_rate = 0;
+    const OversampleRate oversample_rate = OversampleRate::None;
 };
 
 class AudioLevelReportMessage : public Message {

@@ -29,14 +29,6 @@
 using namespace portapack;
 namespace fs = std::filesystem;
 
-namespace {
-/*void log(const std::string& msg) {
-    LogFile log{};
-    log.append("LOGS/Notepad.txt");
-    log.write_entry(msg);
-}*/
-}  // namespace
-
 namespace ui {
 
 /* TextViewer *******************************************************/
@@ -72,6 +64,7 @@ void TextViewer::paint(Painter& painter) {
         paint_state_.first_line = first_line;
         paint_state_.first_col = first_col;
         paint_state_.redraw_text = true;
+        paint_state_.line = UINT32_MAX;  // forget old cursor position when overwritten
     }
 
     if (paint_state_.redraw_text) {
@@ -221,6 +214,10 @@ void TextViewer::paint_text(Painter& painter, uint32_t line, uint16_t col) {
                  r.top() + (int)i * char_height,
                  clear_width * char_width, char_height},
                 style().background);
+
+        // if cursor line got overwritten, disable XOR of old cursor when displaying new cursor
+        if (i == paint_state_.line)
+            paint_state_.line = UINT32_MAX;
     }
 }
 
@@ -228,21 +225,32 @@ void TextViewer::paint_cursor(Painter& painter) {
     if (!has_focus())
         return;
 
-    auto draw_cursor = [this, &painter](uint32_t line, uint16_t col, Color c) {
-        auto r = screen_rect();
-        line = line - paint_state_.first_line;
-        col = col - paint_state_.first_col;
+    auto xor_cursor = [this, &painter](int32_t line, uint16_t col) {
+        int cursor_width = char_width + 1;
+        int x = (col - paint_state_.first_col) * char_width - 1;
+        if (x < 0) {  // cursor is one pixel narrower when in left column
+            cursor_width--;
+            x = 0;
+        }
+        int y = screen_rect().top() + (line - paint_state_.first_line) * char_height;
 
-        painter.draw_rectangle(
-            {(int)col * char_width - 1,
-             r.top() + (int)line * char_height,
-             char_width + 1, char_height},
-            c);
+        // Converting one row at a time to reduce buffer size
+        auto pbuf8 = cursor_.pixel_buffer8;
+        auto pbuf = cursor_.pixel_buffer;
+        for (auto col = 0; col < char_height; col++) {
+            // Annoyingly, read_pixels uses a 24-bit pixel format vs draw_pixels which uses 16-bit
+            portapack::display.read_pixels({x, y + col, cursor_width, 1}, pbuf8, cursor_width);
+            for (auto i = 0; i < cursor_width; i++)
+                pbuf[i] = Color(pbuf8[i].r, pbuf8[i].g, pbuf8[i].b).v ^ 0xFFFF;
+            portapack::display.draw_pixels({x, y + col, cursor_width, 1}, pbuf, cursor_width);
+        }
     };
 
-    // Clear old cursor. CONSIDER: XOR cursor?
-    draw_cursor(paint_state_.line, paint_state_.col, style().background);
-    draw_cursor(cursor_.line, cursor_.col, style().foreground);
+    if (paint_state_.line != UINT32_MAX)  // only XOR old cursor if it still appears on the screen
+        xor_cursor(paint_state_.line, paint_state_.col);
+
+    xor_cursor(cursor_.line, cursor_.col);
+
     paint_state_.line = cursor_.line;
     paint_state_.col = cursor_.col;
 }
@@ -325,7 +333,7 @@ static void show_save_prompt(
     std::function<void()> on_save,
     std::function<void()> continuation) {
     nav.display_modal(
-        "Save?", "Save changes?", YESNO,
+        "Save?", "       Save changes?", YESNO,
         [on_save](bool choice) {
             if (choice && on_save)
                 on_save();
@@ -343,6 +351,8 @@ TextEditorView::TextEditorView(NavigationView& nav)
             &text_position,
             &text_size,
         });
+
+    viewer.set_font_zoom(enable_zoom);
 
     viewer.on_select = [this]() {
         // Treat as if menu button was pressed.
@@ -366,7 +376,7 @@ TextEditorView::TextEditorView(NavigationView& nav)
     };
 
     menu.on_zoom() = [this]() {
-        viewer.toggle_font_zoom();
+        enable_zoom = viewer.toggle_font_zoom();
         refresh_ui();
         hide_menu(true);
     };
@@ -395,16 +405,9 @@ TextEditorView::TextEditorView(NavigationView& nav)
     };
 
     menu.on_open() = [this]() {
-        /*show_save_prompt([this]() {
+        show_save_prompt([this]() {
             show_file_picker();
-        });*/
-        // HACK: above should work but it's faulting.
-        if (!file_dirty_) {
-            show_file_picker();
-        } else {
-            show_save_prompt(nullptr);
-            show_file_picker(false);
-        }
+        });
     };
 
     menu.on_save() = [this]() {
@@ -458,7 +461,13 @@ void TextEditorView::open_file(const fs::path& path) {
     path_ = {};
     file_dirty_ = false;
     has_temp_file_ = false;
-    auto result = FileWrapper::open(path);
+    auto result = FileWrapper::open(
+        path, false, [](uint32_t value, uint32_t total) {
+            Painter p;
+            auto percent = (value * 100) / total;
+            auto width = (percent * screen_width) / 100;
+            p.draw_hline({0, 16}, width, Color::yellow());
+        });
 
     if (!result) {
         nav_.display_modal("Read Error", "Cannot open file:\n" + result.error().what());
@@ -506,16 +515,16 @@ void TextEditorView::hide_menu(bool hidden) {
     set_dirty();
 }
 
-void TextEditorView::show_file_picker(bool immediate) {
-    // TODO: immediate is a hack until nav_.on_pop is fixed.
-    auto open_view = immediate ? nav_.push<FileLoadView>("") : nav_.push_under_current<FileLoadView>("");
-
-    if (open_view) {
-        open_view->on_changed = [this](std::filesystem::path path) {
-            open_file(path);
+void TextEditorView::show_file_picker() {
+    auto open_view = nav_.push<FileLoadView>("");
+    open_view->on_changed = [this](std::filesystem::path path) {
+        // Can't update the UI focus while the FileLoadView is still up.
+        // Do this on a continuation instead of in on_changed.
+        nav_.set_on_pop([this, p = std::move(path)]() {
+            open_file(p);
             hide_menu();
-        };
-    }
+        });
+    };
 }
 
 void TextEditorView::show_edit_line() {
@@ -565,6 +574,10 @@ void TextEditorView::prepare_for_write() {
 
     if (has_temp_file_)
         return;
+
+    // TODO: This would be nice to have but it causes a stack overflow in an ISR?
+    // Painter p;
+    // p.draw_string({2, 48}, Styles::yellow, "Creating temporary file...");
 
     // Copy to temp file on write.
     has_temp_file_ = true;

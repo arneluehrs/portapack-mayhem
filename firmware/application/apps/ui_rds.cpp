@@ -164,7 +164,7 @@ RDSView::~RDSView() {
 }
 
 void RDSView::start_tx() {
-    rds_flags.PI_code = sym_pi_code.value_hex_u64();
+    rds_flags.PI_code = sym_pi_code.to_integer();
     rds_flags.PTY = options_pty.selected_index_value();
     rds_flags.DI = view_PSN.mono_stereo ? 1 : 0;
     rds_flags.TP = check_TP.value();
@@ -187,6 +187,7 @@ void RDSView::start_tx() {
     else
         frame_datetime.clear();
 
+    transmitter_model.set_baseband_bandwidth(1'750'000);  // Big Spectrum harmonics reduction, and now quicker decoding time.
     transmitter_model.enable();
 
     tx_thread = std::make_unique<RDSThread>(frames);
@@ -212,12 +213,9 @@ RDSView::RDSView(
 
     check_TP.set_value(true);
 
-    sym_pi_code.set_sym(0, 0xF);
-    sym_pi_code.set_sym(1, 0x3);
-    sym_pi_code.set_sym(2, 0xE);
-    sym_pi_code.set_sym(3, 0x0);
-    sym_pi_code.on_change = [this]() {
-        rds_flags.PI_code = sym_pi_code.value_hex_u64();
+    sym_pi_code.set_value(0xF3E0);
+    sym_pi_code.on_change = [this](SymField&) {
+        rds_flags.PI_code = sym_pi_code.to_integer();
     };
 
     options_pty.set_selected_index(0);  // None

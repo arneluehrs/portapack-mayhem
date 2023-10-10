@@ -87,9 +87,9 @@ class FrequencySaveView : public FreqManBaseView {
    public:
     FrequencySaveView(NavigationView& nav, const rf::Frequency value);
     std::string title() const override { return "Save freq"; }
+    void focus() override;
 
    private:
-    std::string temp_buffer_{};
     freqman_entry entry_{};
 
     void refresh_ui();
@@ -101,15 +101,9 @@ class FrequencySaveView : public FreqManBaseView {
     Labels labels{
         {{0 * 8, 6 * 16}, "Description:", Color::white()}};
 
-    Text text_description{{0 * 8, 7 * 16, 30 * 8, 1 * 16}};
-
-    Button button_clear{
-        {4 * 8, 10 * 16, 10 * 8, 2 * 16},
-        "Clear"};
-
-    Button button_edit{
-        {16 * 8, 10 * 16, 10 * 8, 2 * 16},
-        "Edit"};
+    TextField field_description{
+        {0 * 8, 7 * 16, 30 * 8, 1 * 16},
+        ""};
 
     Button button_save{
         {0 * 8, 17 * 16, 15 * 8, 2 * 16},
@@ -219,12 +213,15 @@ class FrequencyEditView : public View {
         {{0 * 8, 10 * 16}, "Description:", Color::light_grey()},
     };
 
-    OptionsField field_type{{13 * 8, 3 * 16}, 8, {
-                                                     {"Single", 0},
-                                                     {"Range", 1},
-                                                     {"HamRadio", 2},
-                                                     {"Raw", 3},
-                                                 }};
+    OptionsField field_type{
+        {13 * 8, 3 * 16},
+        8,
+        {
+            {"Single", 0},
+            {"Range", 1},
+            {"HamRadio", 2},
+            {"Raw", 3},
+        }};
 
     FrequencyField field_freq_a{{13 * 8, 4 * 16}};
 
@@ -256,3 +253,9 @@ class FrequencyEditView : public View {
 };
 
 } /* namespace ui */
+
+void freqman_set_bandwidth_option(freqman_index_t modulation, ui::OptionsField& option);
+void freqman_set_modulation_option(ui::OptionsField& option);
+void freqman_set_step_option(ui::OptionsField& option);
+void freqman_set_step_option_short(ui::OptionsField& option);
+void freqman_set_tone_option(ui::OptionsField& option);

@@ -29,12 +29,13 @@
 #include "audio_output.hpp"
 
 SondeProcessor::SondeProcessor() {
-    decim_0.configure(taps_11k0_decim_0.taps, 33554432);
-    decim_1.configure(taps_11k0_decim_1.taps, 131072);
+    decim_0.configure(taps_11k0_decim_0.taps);
+    decim_1.configure(taps_11k0_decim_1.taps);
 
     audio_output.configure(false);
 
     tone_gen.configure(BEEP_BASE_FREQ, 1.0, ToneGen::tone_type::sine, AUDIO_SAMPLE_RATE);
+    baseband_thread.start();
 }
 
 void SondeProcessor::execute(const buffer_c8_t& buffer) {

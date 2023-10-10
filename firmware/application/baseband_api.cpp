@@ -31,6 +31,16 @@
 
 #include "core_control.hpp"
 
+/* Set true to enable additional checks to ensure
+ * M4 and M0 are synchronized before passing messages. */
+static constexpr bool enforce_core_sync = true;
+
+/* Set true to enable check for baseband messages getting stuck.
+ * This implies the baseband thread is not dequeuing and has probably stalled.
+ * NB: This check adds a small amout of overhead to the message sending code
+ * and may impact application perf if it is sending a lot of messages. */
+static constexpr bool check_for_message_hang = true;
+
 using namespace portapack;
 
 namespace baseband {
@@ -40,8 +50,18 @@ static void send_message(const Message* const message) {
     // another message is present before setting new message.
     shared_memory.baseband_message = message;
     creg::m0apptxevent::assert_event();
-    while (shared_memory.baseband_message)
-        ;
+
+    if constexpr (check_for_message_hang) {
+        auto count = UINT32_MAX;
+        while (shared_memory.baseband_message && --count)
+            /* spin */;
+
+        if (count == 0)
+            chDbgPanic("Baseband Send Fail");
+    } else {
+        while (shared_memory.baseband_message)
+            /* spin */;
+    }
 }
 
 void AMConfig::apply() const {
@@ -169,7 +189,16 @@ void kill_afsk() {
     send_message(&message);
 }
 
-void set_audiotx_config(const uint32_t divider, const float deviation_hz, const float audio_gain, uint8_t audio_shift_bits_s16, const uint32_t tone_key_delta, const bool am_enabled, const bool dsb_enabled, const bool usb_enabled, const bool lsb_enabled) {
+void set_audiotx_config(
+    const uint32_t divider,
+    const float deviation_hz,
+    const float audio_gain,
+    uint8_t audio_shift_bits_s16,
+    const uint32_t tone_key_delta,
+    const bool am_enabled,
+    const bool dsb_enabled,
+    const bool usb_enabled,
+    const bool lsb_enabled) {
     const AudioTXConfigMessage message{
         divider,
         deviation_hz,
@@ -276,17 +305,52 @@ void set_spectrum_painter_config(const uint16_t width, const uint16_t height, bo
 
 static bool baseband_image_running = false;
 
-void run_image(const portapack::spi_flash::image_tag_t image_tag) {
+void run_image(const spi_flash::image_tag_t image_tag) {
     if (baseband_image_running) {
         chDbgPanic("BBRunning");
     }
 
     creg::m4txevent::clear();
+    shared_memory.clear_baseband_ready();
 
-    m4_init(image_tag, portapack::memory::map::m4_code, false);
+    m4_init(image_tag, memory::map::m4_code, false);
     baseband_image_running = true;
 
     creg::m4txevent::enable();
+
+    if constexpr (enforce_core_sync) {
+        // Wait up to 3 seconds for baseband to start handling events.
+        auto count = 3'000u;
+        while (!shared_memory.baseband_ready && --count)
+            chThdSleepMilliseconds(1);
+
+        if (count == 0)
+            chDbgPanic("Baseband Sync Fail");
+    }
+}
+
+void run_prepared_image(const uint32_t m4_code) {
+    if (baseband_image_running) {
+        chDbgPanic("BBRunning");
+    }
+
+    creg::m4txevent::clear();
+    shared_memory.clear_baseband_ready();
+
+    m4_init_prepared(m4_code, false);
+    baseband_image_running = true;
+
+    creg::m4txevent::enable();
+
+    if constexpr (enforce_core_sync) {
+        // Wait up to 3 seconds for baseband to start handling events.
+        auto count = 3'000u;
+        while (!shared_memory.baseband_ready && --count)
+            chThdSleepMilliseconds(1);
+
+        if (count == 0)
+            chDbgPanic("Baseband Sync Fail");
+    }
 }
 
 void shutdown() {
@@ -316,8 +380,8 @@ void spectrum_streaming_stop() {
     send_message(&message);
 }
 
-void set_sample_rate(const uint32_t sample_rate) {
-    SamplerateConfigMessage message{sample_rate};
+void set_sample_rate(uint32_t sample_rate, OversampleRate oversample_rate) {
+    SampleRateConfigMessage message{sample_rate, oversample_rate};
     send_message(&message);
 }
 
