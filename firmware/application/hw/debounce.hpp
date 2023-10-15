@@ -24,17 +24,44 @@
 
 #include <cstdint>
 
-class Debounce {
-public:
-	bool feed(const uint8_t bit);
-	
-	uint8_t state() const {
-		return state_;
-	}
+// consecutive # of times button input must be same (<=8)
+#define DEBOUNCE_COUNT 4
+#define DEBOUNCE_MASK ((1 << DEBOUNCE_COUNT) - 1)
 
-private:
-	uint8_t history_ { 0 };
-	uint8_t state_ { 0 };
+// # of timer0 ticks before a held button starts being counted as repeated presses
+#define REPEAT_INITIAL_DELAY 250
+#define REPEAT_SUBSEQUENT_DELAY 92
+#define LONG_PRESS_DELAY 800
+
+class Debounce {
+   public:
+    bool feed(const uint8_t bit);
+    uint8_t state();
+    void enable_repeat();
+    bool get_long_press_enabled() const;
+    void set_long_press_enabled(bool v);
+    bool long_press_occurred();
+
+   private:
+    uint8_t history_{0};  // shift register of last 8 reads from button hardware state bit
+
+    uint8_t state_{0};  // actual button hardware state (after debounce logic), 1=pressed
+
+    uint8_t state_to_report_{0};  // pseudo button state reported by state() function (may be masked off or simulated presses)
+
+    bool repeat_enabled_{false};  // TRUE if this button is enabled to auto-repeat when held down (ignored if long_press_enabled)
+
+    uint16_t repeat_ctr_{0};  // used for timing auto-repeat simulated button presses when button is held down and repeat_enabled
+
+    uint16_t held_time_{0};  // number of ticks that the button has been held down (compared against REPEAT and LONG_PRESS delays)
+
+    bool pulse_upon_release_{false};  // TRUE when button is being held down when long_press_enabled and LONG_PRESS_DELAY hasn't been reached yet
+
+    bool simulated_pulse_{false};  // TRUE if a simulated button press is active following a short button press (only when long_press_enabled)
+
+    bool long_press_enabled_{false};  // TRUE when button is in long-press mode (takes precedence over the repeat_enabled flag)
+
+    bool long_press_occurred_{false};  // TRUE when button is being held down and LONG_PRESS_DELAY has been reached (only when long_press_enabled)
 };
 
-#endif/*__DEBOUNCE_H__*/
+#endif /*__DEBOUNCE_H__*/

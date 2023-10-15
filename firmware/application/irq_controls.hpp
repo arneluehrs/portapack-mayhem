@@ -27,29 +27,37 @@
 
 #include "touch.hpp"
 
-enum class Switch {
-	Right = 0,
-	Left = 1,
-	Down = 2,
-	Up = 3,
-	Sel = 4,
+// Must be same values as in ui::KeyEvent
+// TODO: Why not just reuse one or the other?
+enum class Switch : uint8_t {
+    Right = 0,
+    Left = 1,
+    Down = 2,
+    Up = 3,
+    Sel = 4,
+    Dfu = 5
 };
 
-using SwitchesState = std::bitset<5>;
-
+// Index with the Switch enum.
+using SwitchesState = std::bitset<6>;
 using EncoderPosition = uint32_t;
 
 void controls_init();
+uint8_t swizzled_switches();
 SwitchesState get_switches_state();
 EncoderPosition get_encoder_position();
 touch::Frame get_touch_frame();
+
+SwitchesState get_switches_long_press_config();
+void set_switches_long_press_config(SwitchesState switch_config);
+bool switch_is_long_pressed(Switch s);
 
 namespace control {
 namespace debug {
 
 uint8_t switches();
 
-} /* debug */
-} /* control */
+}  // namespace debug
+}  // namespace control
 
-#endif/*__IRQ_CONTROLS_H__*/
+#endif /*__IRQ_CONTROLS_H__*/

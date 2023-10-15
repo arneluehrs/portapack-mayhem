@@ -21,110 +21,103 @@
  */
 
 #include "capture_app.hpp"
-
 #include "baseband_api.hpp"
-
 #include "portapack.hpp"
+#include "ui_freqman.hpp"
+
 using namespace portapack;
 
 namespace ui {
 
-CaptureAppView::CaptureAppView(NavigationView& nav) {
-	baseband::run_image(portapack::spi_flash::image_tag_capture);
+CaptureAppView::CaptureAppView(NavigationView& nav)
+    : nav_{nav} {
+    baseband::run_image(portapack::spi_flash::image_tag_capture);
 
-	add_children({
-		&labels,
-		&rssi,
-		&channel,
-		&field_frequency,
-		&field_frequency_step,
-		&field_rf_amp,
-		&field_lna,
-		&field_vga,
-		&option_bandwidth,
-		&record_view,
-		&waterfall,
-	});
+    add_children({
+        &labels,
+        &rssi,
+        &channel,
+        &field_frequency,
+        &field_frequency_step,
+        &field_rf_amp,
+        &field_lna,
+        &field_vga,
+        &option_bandwidth,
+        &option_format,
+        &check_trim,
+        &record_view,
+        &waterfall,
+    });
 
-	// Hack for initialization
-	// TODO: This should be included in a more global section so apps dont need to do it 
-	receiver_model.set_sampling_rate(3072000);
-	receiver_model.set_baseband_bandwidth(1750000);
-	//-------------------
+    field_frequency_step.set_by_value(receiver_model.frequency_step());
+    field_frequency_step.on_change = [this](size_t, OptionsField::value_t v) {
+        receiver_model.set_frequency_step(v);
+        this->field_frequency.set_step(v);
+    };
 
-	field_frequency.set_value(receiver_model.tuning_frequency());
-	field_frequency.set_step(receiver_model.frequency_step());
-	field_frequency.on_change = [this](rf::Frequency f) {
-		this->on_tuning_frequency_changed(f);
-	};
-	field_frequency.on_edit = [this, &nav]() {
-		// TODO: Provide separate modal method/scheme?
-		auto new_view = nav.push<FrequencyKeypadView>(receiver_model.tuning_frequency());
-		new_view->on_changed = [this](rf::Frequency f) {
-			this->on_tuning_frequency_changed(f);
-			this->field_frequency.set_value(f);
-		};
-	};
-	
-	field_frequency_step.set_by_value(receiver_model.frequency_step());
-	field_frequency_step.on_change = [this](size_t, OptionsField::value_t v) {
-		receiver_model.set_frequency_step(v);
-		this->field_frequency.set_step(v);
-	};
-	
-	option_bandwidth.on_change = [this](size_t, uint32_t base_rate) {
-		sampling_rate = 8 * base_rate;	// Decimation by 8 done on baseband side
-		
-		waterfall.on_hide();
-		record_view.set_sampling_rate(sampling_rate);
-		receiver_model.set_sampling_rate(sampling_rate);
-		waterfall.on_show();
-	};
-	
-	option_bandwidth.set_selected_index(7);		// 500k
-	
-	receiver_model.set_modulation(ReceiverModel::Mode::Capture);
-	receiver_model.set_baseband_bandwidth(baseband_bandwidth);
-	receiver_model.enable();
+    option_format.set_selected_index(0);  // Default to C16
+    option_format.on_change = [this](size_t, uint32_t file_type) {
+        record_view.set_file_type((RecordView::FileType)file_type);
+    };
 
-	record_view.on_error = [&nav](std::string message) {
-		nav.display_modal("Error", message);
-	};
+    check_trim.on_select = [this](Checkbox&, bool v) {
+        record_view.set_auto_trim(v);
+    };
+
+    freqman_set_bandwidth_option(SPEC_MODULATION, option_bandwidth);
+    option_bandwidth.on_change = [this](size_t, uint32_t bandwidth) {
+        /* Nyquist would imply a sample rate of 2x bandwidth, but because the ADC
+         * provides 2 values (I,Q), the sample_rate is equal to bandwidth here. */
+        auto sample_rate = bandwidth;
+
+        /* base_rate (bandwidth) is used for FFT calculation and display LCD, and also in recording writing SD Card rate. */
+        /* ex. sampling_rate values, 4Mhz, when recording 500 kHz (BW) and fs 8 Mhz, when selected 1 Mhz BW ... */
+        /* ex. recording 500kHz BW to .C16 file, base_rate clock 500kHz x2(I,Q) x 2 bytes (int signed) =2MB/sec rate SD Card. */
+
+        waterfall.stop();
+
+        // record_view determines the correct oversampling to apply and returns the actual sample rate.
+        // NB: record_view is what actually updates proc_capture baseband settings.
+        auto actual_sample_rate = record_view.set_sampling_rate(sample_rate);
+
+        // Update the radio model with the actual sampling rate.
+        receiver_model.set_sampling_rate(actual_sample_rate);
+
+        // Get suitable anti-aliasing BPF bandwidth for MAX2837 given the actual sample rate.
+        auto anti_alias_filter_bandwidth = filter_bandwidth_for_sampling_rate(actual_sample_rate);
+        receiver_model.set_baseband_bandwidth(anti_alias_filter_bandwidth);
+
+        // Automatically switch default capture format to C8 when bandwidth setting is increased to >=1.5MHz
+        if ((bandwidth >= 1500000) && (previous_bandwidth < 1500000)) {
+            option_format.set_selected_index(1);
+        }
+        previous_bandwidth = bandwidth;
+
+        waterfall.start();
+    };
+
+    receiver_model.enable();
+    option_bandwidth.set_by_value(500000);
+
+    record_view.on_error = [&nav](std::string message) {
+        nav.display_modal("Error", message);
+    };
 }
 
 CaptureAppView::~CaptureAppView() {
-
-	// Hack for preventing halting other apps
-	// TODO: This should be also part of something global
-	receiver_model.set_sampling_rate(3072000);
-	receiver_model.set_baseband_bandwidth(1750000);
-	receiver_model.set_modulation(ReceiverModel::Mode::WidebandFMAudio);
-	// ----------------------------
-
-	receiver_model.disable();
-	baseband::shutdown();
-}
-
-void CaptureAppView::on_hide() {
-	// TODO: Terrible kludge because widget system doesn't notify Waterfall that
-	// it's being shown or hidden.
-	waterfall.on_hide();
-	View::on_hide();
+    receiver_model.disable();
+    baseband::shutdown();
 }
 
 void CaptureAppView::set_parent_rect(const Rect new_parent_rect) {
-	View::set_parent_rect(new_parent_rect);
+    View::set_parent_rect(new_parent_rect);
 
-	const ui::Rect waterfall_rect { 0, header_height, new_parent_rect.width(), new_parent_rect.height() - header_height };
-	waterfall.set_parent_rect(waterfall_rect);
+    ui::Rect waterfall_rect{0, header_height, new_parent_rect.width(), new_parent_rect.height() - header_height};
+    waterfall.set_parent_rect(waterfall_rect);
 }
 
 void CaptureAppView::focus() {
-	record_view.focus();
-}
-
-void CaptureAppView::on_tuning_frequency_changed(rf::Frequency f) {
-	receiver_model.set_tuning_frequency(f);
+    record_view.focus();
 }
 
 } /* namespace ui */

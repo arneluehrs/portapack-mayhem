@@ -23,20 +23,29 @@
 #ifndef __TONE_KEY_H_
 #define __TONE_KEY_H_
 
-#include "ui.hpp"
-#include "ui_widget.hpp"
-
-using namespace ui;
+#include <cstdint>
+#include <string>
+#include <vector>
 
 namespace tonekey {
 
-using tone_key_t = std::vector<std::pair<std::string, float>>;
+#define TONE_FREQ_TOLERANCE_CENTIHZ (4 * 100)
+#define TONE_DISPLAY_TOGGLE_COUNTER 3
+#define F2Ix100(x) (int32_t)(x * 100.0 + 0.5)  // add 0.5f to round vs truncate during FP->int conversion
+
+using tone_index = int32_t;
+using tone_key_t = std::vector<std::pair<std::string, uint32_t>>;
 
 extern const tone_key_t tone_keys;
 
-void tone_keys_populate(OptionsField& field);
-float tone_key_frequency(const uint32_t index);
+float tone_key_frequency(tone_index index);
 
-}
+std::string fx100_string(uint32_t f);
+std::string tone_key_string(tone_index index);
+std::string tone_key_value_string(tone_index index);
+std::string tone_key_string_by_value(uint32_t value, size_t max_length);
+tone_index tone_key_index_by_value(uint32_t value);
 
-#endif/*__TONE_KEY_H_*/
+}  // namespace tonekey
+
+#endif /*__TONE_KEY_H_*/

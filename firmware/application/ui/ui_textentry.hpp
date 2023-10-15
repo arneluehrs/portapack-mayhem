@@ -29,41 +29,48 @@
 namespace ui {
 
 class TextEntryView : public View {
-public:
-	std::function<void(std::string&)> on_changed { };
-	
-	void focus() override;
-	std::string title() const override { return "Text entry"; };
-	
-protected:
-	TextEntryView(NavigationView& nav, std::string& str, size_t max_length);
-	
-	TextEntryView(const TextEntryView&) = delete;
-	TextEntryView(TextEntryView&&) = delete;
-	TextEntryView& operator=(const TextEntryView&) = delete;
-	TextEntryView& operator=(TextEntryView&&) = delete;
+   public:
+    std::function<void(std::string&)> on_changed{};
 
-	void char_add(const char c);
-	void char_delete();
-	void draw_cursor();
-	void update_text();
-	
-	std::string& _str;
-	size_t _max_length;
-	uint32_t cursor_pos { 0 };
-	
-	Text text_input {
-		{ 0, 0, 240, 16 }
-	};
-	
-	Button button_ok {
-		{ 10 * 8, 33 * 8, 9 * 8, 32 },
-		"OK"
-	};
+    void focus() override;
+    std::string title() const override { return "Text entry"; };
+
+    void set_cursor(uint32_t pos);
+
+   protected:
+    TextEntryView(NavigationView& nav, std::string& str, size_t max_length);
+
+    TextEntryView(const TextEntryView&) = delete;
+    TextEntryView(TextEntryView&&) = delete;
+    TextEntryView& operator=(const TextEntryView&) = delete;
+    TextEntryView& operator=(TextEntryView&&) = delete;
+
+    void char_add(const char c);
+    void char_delete();
+
+    TextEdit text_input;
+    Button button_ok{
+        {22 * 8, 32 * 8 - 3, 8 * 8, 3 * 16 + 3},
+        "OK"};
 };
 
-void text_prompt(NavigationView& nav, std::string& str, size_t max_length, const std::function<void(std::string&)> on_done = nullptr);
+// Show the TextEntry view to receive keyboard input.
+// NB: This function returns immediately. 'str' is taken
+// by reference and its lifetime must be ensured by the
+// caller until the TextEntry view is dismissed.
+void text_prompt(
+    NavigationView& nav,
+    std::string& str,
+    size_t max_length,
+    std::function<void(std::string&)> on_done = nullptr);
+
+void text_prompt(
+    NavigationView& nav,
+    std::string& str,
+    uint32_t cursor_pos,
+    size_t max_length,
+    std::function<void(std::string&)> on_done = nullptr);
 
 } /* namespace ui */
 
-#endif/*__UI_TEXTENTRY_H__*/
+#endif /*__UI_TEXTENTRY_H__*/

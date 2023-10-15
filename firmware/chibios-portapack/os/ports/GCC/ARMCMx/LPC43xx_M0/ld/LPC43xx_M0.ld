@@ -33,6 +33,9 @@ __ram_end__             = __ram_start__ + __ram_size__;
 
 ENTRY(ResetHandler)
 
+ /* external apps */
+INCLUDE external.ld
+
 SECTIONS
 {
     . = 0;
@@ -41,6 +44,10 @@ SECTIONS
     startup : ALIGN(16) SUBALIGN(16)
     {
         KEEP(*(vectors))
+	. = ALIGN(0x400);
+        ASSERT(. == 0x400, "Error: attempting to place firmware information section at incorrect location");
+        KEEP(*(.firmware_info));
+
     } > flash
 
     constructors : ALIGN(4) SUBALIGN(4)
@@ -59,7 +66,7 @@ SECTIONS
         PROVIDE(__fini_array_end = .);
     } > flash
 
-    .text : ALIGN(16) SUBALIGN(16)
+    .text : ALIGN(4) SUBALIGN(4)
     {
         *(.text.startup.*)
         *(.text)
@@ -91,7 +98,7 @@ SECTIONS
     {
         *(.eh_frame)
     } > flash
-    
+
     .textalign : ONLY_IF_RO
     {
         . = ALIGN(8);
@@ -138,7 +145,7 @@ SECTIONS
         *(COMMON)
         . = ALIGN(4);
         PROVIDE(_bss_end = .);
-    } > ram    
+    } > ram
 }
 
 PROVIDE(end = .);

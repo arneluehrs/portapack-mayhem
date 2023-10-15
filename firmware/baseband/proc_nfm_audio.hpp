@@ -36,74 +36,73 @@
 
 #include <cstdint>
 
+#define Z_MIN_FILTER_COUNT 224
+#define Z_MIN_ZERO_CROSSINGS 20
+
 class NarrowbandFMAudio : public BasebandProcessor {
-public:
-	void execute(const buffer_c8_t& buffer) override;
+   public:
+    void execute(const buffer_c8_t& buffer) override;
+    void on_message(const Message* const message) override;
 
-	void on_message(const Message* const message) override;
+   private:
+    static constexpr size_t baseband_fs = 3072000;
 
-private:
-	static constexpr size_t baseband_fs = 3072000;
+    std::array<complex16_t, 512> dst{};
+    const buffer_c16_t dst_buffer{
+        dst.data(),
+        dst.size()};
+    const buffer_s16_t work_audio_buffer{
+        (int16_t*)dst.data(),
+        sizeof(dst) / sizeof(int16_t)};
 
-	BasebandThread baseband_thread { baseband_fs, this, NORMALPRIO + 20, baseband::Direction::Receive };
-	RSSIThread rssi_thread { NORMALPRIO + 10 };
+    std::array<int16_t, 16> audio{};
+    const buffer_s16_t audio_buffer{
+        (int16_t*)audio.data(),
+        sizeof(audio) / sizeof(int16_t)};
 
-	std::array<complex16_t, 512> dst { };
-	const buffer_c16_t dst_buffer {
-		dst.data(),
-		dst.size()
-	};
-	const buffer_s16_t work_audio_buffer {
-		(int16_t*)dst.data(),
-		sizeof(dst) / sizeof(int16_t)
-	};
-	
-	std::array<int16_t, 16> audio { };
-	const buffer_s16_t audio_buffer {
-		(int16_t*)audio.data(),
-		sizeof(audio) / sizeof(int16_t)
-	};
-	
-	std::array<int16_t, 16> tone { };
-	const buffer_s16_t tone_buffer {
-		(int16_t*)tone.data(),
-		sizeof(tone) / sizeof(int16_t)
-	};
+    std::array<int16_t, 16> tone{};
+    const buffer_s16_t tone_buffer{
+        (int16_t*)tone.data(),
+        sizeof(tone) / sizeof(int16_t)};
 
-	dsp::decimate::FIRC8xR16x24FS4Decim8 decim_0 { };
-	dsp::decimate::FIRC16xR16x32Decim8 decim_1 { };
-	dsp::decimate::FIRAndDecimateComplex channel_filter { };
-	int32_t channel_filter_low_f = 0;
-	int32_t channel_filter_high_f = 0;
-	int32_t channel_filter_transition = 0;
-	
-	// For CTCSS decoding
-	dsp::decimate::FIR64AndDecimateBy2Real ctcss_filter { };
-	IIRBiquadFilter hpf { };
+    dsp::decimate::FIRC8xR16x24FS4Decim8 decim_0{};
+    dsp::decimate::FIRC16xR16x32Decim8 decim_1{};
+    dsp::decimate::FIRAndDecimateComplex channel_filter{};
+    int32_t channel_filter_low_f = 0;
+    int32_t channel_filter_high_f = 0;
+    int32_t channel_filter_transition = 0;
 
-	dsp::demodulate::FM demod { };
+    // For CTCSS decoding
+    dsp::decimate::FIR64AndDecimateBy2Real ctcss_filter{};
+    IIRBiquadFilter hpf{};
 
-	AudioOutput audio_output { };
+    dsp::demodulate::FM demod{};
 
-	SpectrumCollector channel_spectrum { };
-	
-	uint32_t tone_phase { 0 };
-	uint32_t tone_delta { 0 };
-	bool pitch_rssi_enabled { false };
-	
-	float cur_sample { }, prev_sample { };
-	uint32_t z_acc { 0}, z_timer { 0 }, z_count { 0 };
-	bool ctcss_detect_enabled { true };
-	static constexpr float k = 32768.0f;
-	static constexpr float ki = 1.0f / k;
+    AudioOutput audio_output{};
 
-	bool configured { false };
-	void pitch_rssi_config(const PitchRSSIConfigureMessage& message);
-	void configure(const NBFMConfigureMessage& message);
-	void capture_config(const CaptureConfigMessage& message);
-	
-	//RequestSignalMessage sig_message { RequestSignalMessage::Signal::Squelched };
-	CodedSquelchMessage ctcss_message { 0 };
+    SpectrumCollector channel_spectrum{};
+
+    uint32_t tone_phase{0};
+    uint32_t tone_delta{0};
+    bool pitch_rssi_enabled{false};
+
+    float cur_sample{}, prev_sample{};
+    uint32_t z_acc{0}, z_timer{0}, z_count{0}, z_filter_count{0};
+    bool ctcss_detect_enabled{true};
+    static constexpr float k = 32768.0f;
+    static constexpr float ki = 1.0f / k;
+
+    bool configured{false};
+    // RequestSignalMessage sig_message { RequestSignalMessage::Signal::Squelched };
+    CodedSquelchMessage ctcss_message{0};
+
+    /* NB: Threads should be the last members in the class definition. */
+    BasebandThread baseband_thread{baseband_fs, this, baseband::Direction::Receive};
+    RSSIThread rssi_thread{};
+
+    void pitch_rssi_config(const PitchRSSIConfigureMessage& message);
+    void configure(const NBFMConfigureMessage& message);
+    void capture_config(const CaptureConfigMessage& message);
 };
 
-#endif/*__PROC_NFM_AUDIO_H__*/
+#endif /*__PROC_NFM_AUDIO_H__*/

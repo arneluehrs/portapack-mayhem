@@ -22,118 +22,139 @@
 
 #include "ui_alphanum.hpp"
 
-#include "portapack.hpp"
 #include "hackrf_hal.hpp"
+#include "portapack.hpp"
 #include "portapack_shared_memory.hpp"
-
-#include <algorithm>
+#include "utility.hpp"
 
 namespace ui {
 
-void AlphanumView::paint(Painter&) {
-	draw_cursor();
-}
-
 AlphanumView::AlphanumView(
-	NavigationView& nav,
-	std::string& str,
-	size_t max_length
-) : TextEntryView(nav, str, max_length)
-{
-	size_t n;
-	
-	add_children({
-		&button_mode,
-		&text_raw,
-		&field_raw
-	});
+    NavigationView& nav,
+    std::string& str,
+    size_t max_length)
+    : TextEntryView(nav, str, max_length) {
+    size_t n;
 
-	const auto button_fn = [this](Button& button) {
-		this->on_button(button);
-	};
+    add_children({
+        &button_shift,
+        &labels,
+        &field_raw,
+        &text_raw_to_char,
+        &button_delete,
+        &button_mode,
+    });
 
-	n = 0;
-	for (auto& button : buttons) {
-		button.id = n;
-		button.on_highlight = [this](Button& button) {
-			focused_button = button.id;
-		};
-		button.on_select = button_fn;
-		button.set_parent_rect({
-			static_cast<Coord>((n % 5) * (240 / 5)),
-			static_cast<Coord>((n / 5) * 38 + 24),
-			240 / 5, 38
-		});
-		add_child(&button);
-		n++;
-	}
-	
-	set_mode(mode);
-	
-	button_mode.on_select = [this](Button&) {
-		set_mode(mode + 1);
-	};
-	
-	field_raw.set_value('0');
-	field_raw.on_select = [this](NumberField&) {
-		char_add(field_raw.value());
-		update_text();
-	};
+    const auto button_fn = [this](Button& button) {
+        this->on_button(button);
+    };
 
-	button_ok.on_select = [this, &nav](Button&) {
-		if (on_changed)
-			on_changed(_str);
-		nav.pop();
-	};
+    button_shift.set_vertical_center(true);
+    button_shift.on_select = [this]() {
+        incr(shift_mode);
 
-	update_text();
+        // Disallow one-time shift in digits/symbols mode
+        if ((mode == 1) && (shift_mode == ShiftMode::Shift))
+            shift_mode = ShiftMode::ShiftLock;
+        else if (shift_mode > ShiftMode::ShiftLock)
+            shift_mode = ShiftMode::None;
+
+        refresh_keys();
+    };
+
+    n = 0;
+    for (auto& button : buttons) {
+        button.id = n;
+        button.on_highlight = [this](Button& button) {
+            focused_button = button.id;
+        };
+        button.on_select = button_fn;
+        button.set_parent_rect({static_cast<Coord>((n % 5) * (screen_width / 5)),
+                                static_cast<Coord>((n / 5) * 38 + 24),
+                                screen_width / 5, 38});
+        add_child(&button);
+        n++;
+    }
+
+    set_mode(mode);
+
+    button_mode.on_select = [this](Button&) {
+        set_mode(mode + 1);
+    };
+
+    button_delete.on_select = [this](Button&) {
+        char_delete();
+    };
+
+    field_raw.set_value('0');
+    field_raw.on_select = [this](NumberField&) {
+        char_add(field_raw.value());
+    };
+
+    field_raw.on_change = [this](auto) {
+        text_raw_to_char.set(std::string{static_cast<char>(field_raw.value())});
+    };
 }
 
-void AlphanumView::set_mode(const uint32_t new_mode) {
-	size_t n = 0;
-	
-	if (new_mode < 3)
-		mode = new_mode;
-	else
-		mode = 0;
-	
-	const char * key_list = key_sets[mode].second;
-	
-	for (auto& button : buttons) {
-		const std::string label {
-			key_list[n]
-		};
-		button.set_text(label);
-		n++;
-	}
-	
-	if (mode < 2)
-		button_mode.set_text(key_sets[mode + 1].first);
-	else
-		button_mode.set_text(key_sets[0].first);
+void AlphanumView::set_mode(uint32_t new_mode, ShiftMode new_shift_mode) {
+    if (new_mode < std::size(key_sets))
+        mode = new_mode;
+    else
+        mode = 0;
+
+    shift_mode = new_shift_mode;
+    refresh_keys();
+
+    if (mode + 1 < std::size(key_sets))
+        button_mode.set_text(key_sets[mode + 1].name);
+    else
+        button_mode.set_text(key_sets[0].name);
+}
+
+void AlphanumView::refresh_keys() {
+    auto key_list = shift_mode == ShiftMode::None
+                        ? key_sets[mode].normal
+                        : key_sets[mode].shifted;
+
+    size_t n = 0;
+    for (auto& button : buttons) {
+        button.set_text(std::string{key_list[n]});
+        n++;
+    }
+
+    switch (shift_mode) {
+        case ShiftMode::None:
+            button_shift.set_color(Color::dark_grey());
+            break;
+        case ShiftMode::Shift:
+            button_shift.set_color(Color::black());
+            break;
+        case ShiftMode::ShiftLock:
+            button_shift.set_color(Color::dark_blue());
+            break;
+    }
 }
 
 void AlphanumView::on_button(Button& button) {
-	const auto c = button.text()[0];
-	
-	if (c == '<')
-		char_delete();
-	else
-		char_add(c);
-	
-	update_text();
+    const auto c = button.text()[0];
+    char_add(c);
+
+    // TODO: Consolidate shift handling.
+    if (shift_mode == ShiftMode::Shift) {
+        shift_mode = ShiftMode::None;
+        refresh_keys();
+    }
 }
 
 bool AlphanumView::on_encoder(const EncoderEvent delta) {
-	focused_button += delta;
-	if (focused_button < 0) {
-		focused_button = buttons.size() - 1;
-	}
-	else if (focused_button >= (int16_t)buttons.size()) {
-		focused_button = 0;
-	}
-	buttons[focused_button].focus();
-	return true;
+    focused_button += delta;
+    if (focused_button < 0) {
+        focused_button = buttons.size() - 1;
+    } else if (focused_button >= (int16_t)buttons.size()) {
+        focused_button = 0;
+    }
+    buttons[focused_button].focus();
+    return true;
 }
 
-}
+}  // namespace ui

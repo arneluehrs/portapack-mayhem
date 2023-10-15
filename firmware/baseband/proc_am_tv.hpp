@@ -36,30 +36,28 @@
 #include "tv_collector.hpp"
 
 class WidebandFMAudio : public BasebandProcessor {
-public:
-	void execute(const buffer_c8_t& buffer) override;
+   public:
+    void execute(const buffer_c8_t& buffer) override;
+    void on_message(const Message* const message) override;
 
-	void on_message(const Message* const message) override;
+   private:
+    static constexpr size_t baseband_fs = 2000000;
 
-private:
-	static constexpr size_t baseband_fs = 2000000;
+    std::array<complex16_t, 512> dst{};
+    const buffer_c16_t dst_buffer{
+        dst.data(),
+        dst.size()};
 
-	BasebandThread baseband_thread { baseband_fs, this, NORMALPRIO + 20, baseband::Direction::Receive };
-	RSSIThread rssi_thread { NORMALPRIO + 10 };
+    AudioSpectrum audio_spectrum{};
+    TvCollector channel_spectrum{};
+    std::array<complex16_t, 256> spectrum{};
+    bool configured{false};
 
-	std::array<complex16_t, 512> dst { };
-	const buffer_c16_t dst_buffer {
-		dst.data(),
-		dst.size()
-	};
+    /* NB: Threads should be the last members in the class definition. */
+    BasebandThread baseband_thread{baseband_fs, this, baseband::Direction::Receive};
+    RSSIThread rssi_thread{};
 
-	AudioSpectrum audio_spectrum { };
-	TvCollector channel_spectrum { };
-        std::array<complex16_t, 256> spectrum { };
-
-	bool configured { false };
-	void configure(const WFMConfigureMessage& message);
-
+    void configure(const WFMConfigureMessage& message);
 };
 
-#endif/*__PROC_AM_TV_H__*/
+#endif /*__PROC_AM_TV_H__*/

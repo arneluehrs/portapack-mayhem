@@ -32,43 +32,49 @@ WORKING_AREA(rssi_thread_wa, 128);
 
 Thread* RSSIThread::thread = nullptr;
 
-RSSIThread::RSSIThread(const tprio_t priority) {
-	thread = chThdCreateStatic(rssi_thread_wa, sizeof(rssi_thread_wa),
-		priority, ThreadBase::fn,
-		this
-	);
+RSSIThread::RSSIThread(bool auto_start, tprio_t priority)
+    : priority_{priority} {
+    if (auto_start) start();
 }
 
 RSSIThread::~RSSIThread() {
-	chThdTerminate(thread);
-	chThdWait(thread);
-	thread = nullptr;
+    if (thread) {
+        chThdTerminate(thread);
+        chThdWait(thread);
+        thread = nullptr;
+    }
+}
+
+void RSSIThread::start() {
+    if (!thread) {
+        thread = chThdCreateStatic(
+            rssi_thread_wa, sizeof(rssi_thread_wa),
+            priority_, ThreadBase::fn, this);
+    }
 }
 
 void RSSIThread::run() {
-	rf::rssi::init();
-	rf::rssi::dma::allocate(4, 400);
+    rf::rssi::init();
+    rf::rssi::dma::allocate(4, 400);
 
-	RSSIStatisticsCollector stats;
+    RSSIStatisticsCollector stats;
 
-	rf::rssi::start();
+    rf::rssi::start();
 
-	while( !chThdShouldTerminate() ) {
-		// TODO: Place correct sampling rate into buffer returned here:
-		const auto buffer_tmp = rf::rssi::dma::wait_for_buffer();
-		const rf::rssi::buffer_t buffer {
-			buffer_tmp.p, buffer_tmp.count, sampling_rate
-		};
+    while (!chThdShouldTerminate()) {
+        // TODO: Place correct sampling rate into buffer returned here:
+        const auto buffer_tmp = rf::rssi::dma::wait_for_buffer();
+        const rf::rssi::buffer_t buffer{
+            buffer_tmp.p, buffer_tmp.count, sampling_rate};
 
-		stats.process(
-			buffer,
-			[](const RSSIStatistics& statistics) {
-				const RSSIStatisticsMessage message { statistics };
-				shared_memory.application_queue.push(message);
-			}
-		);
-	}
+        stats.process(
+            buffer,
+            [](const RSSIStatistics& statistics) {
+                const RSSIStatisticsMessage message{statistics};
+                shared_memory.application_queue.push(message);
+            });
+    }
 
-	rf::rssi::stop();
-	rf::rssi::dma::free();
+    rf::rssi::stop();
+    rf::rssi::dma::free();
 }

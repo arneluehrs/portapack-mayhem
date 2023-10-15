@@ -19,104 +19,104 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "event_m4.hpp"
-
-#include "portapack_shared_memory.hpp"
-
-#include "message_queue.hpp"
-
 #include "ch.h"
-
+#include "debug.hpp"
+#include "event_m4.hpp"
 #include "lpc43xx_cpp.hpp"
-using namespace lpc43xx;
+#include "message_queue.hpp"
+#include "portapack_shared_memory.hpp"
 
 #include <cstdint>
 #include <array>
 
+using namespace lpc43xx;
+
 extern "C" {
 
 CH_IRQ_HANDLER(MAPP_IRQHandler) {
-	CH_IRQ_PROLOGUE();
+    CH_IRQ_PROLOGUE();
 
-	chSysLockFromIsr();
-	EventDispatcher::events_flag_isr(EVT_MASK_BASEBAND);
-	chSysUnlockFromIsr();
+    chSysLockFromIsr();
+    EventDispatcher::events_flag_isr(EVT_MASK_BASEBAND);
+    chSysUnlockFromIsr();
 
-	creg::m0apptxevent::clear();
+    creg::m0apptxevent::clear();
 
-	CH_IRQ_EPILOGUE();
+    CH_IRQ_EPILOGUE();
 }
-
 }
 
 Thread* EventDispatcher::thread_event_loop = nullptr;
 
 EventDispatcher::EventDispatcher(
-	std::unique_ptr<BasebandProcessor> baseband_processor
-) : baseband_processor { std::move(baseband_processor) }
-{
+    std::unique_ptr<BasebandProcessor> baseband_processor)
+    : baseband_processor{std::move(baseband_processor)} {
 }
 
 void EventDispatcher::run() {
-	thread_event_loop = chThdSelf();
+    thread_event_loop = chThdSelf();
 
-	lpc43xx::creg::m0apptxevent::enable();
+    lpc43xx::creg::m0apptxevent::enable();
 
-	while(is_running) {
-		const auto events = wait();
-		dispatch(events);
-	}
+    // Indicate to the M0 thread that
+    // M4 is ready to receive message events.
+    shared_memory.set_baseband_ready();
 
-	lpc43xx::creg::m0apptxevent::disable();
+    while (is_running) {
+        const auto events = wait();
+        dispatch(events);
+    }
+
+    lpc43xx::creg::m0apptxevent::disable();
 }
 
 void EventDispatcher::request_stop() {
-	is_running = false;
+    is_running = false;
 }
 
 eventmask_t EventDispatcher::wait() {
-	return chEvtWaitAny(ALL_EVENTS);
+    return chEvtWaitAny(ALL_EVENTS);
 }
 
 void EventDispatcher::dispatch(const eventmask_t events) {
-	if( events & EVT_MASK_BASEBAND ) {
-		handle_baseband_queue();
-	}
+    if (events & EVT_MASK_BASEBAND) {
+        handle_baseband_queue();
+    }
 
-	if( events & EVT_MASK_SPECTRUM ) {
-		handle_spectrum();
-	}
+    if (events & EVT_MASK_SPECTRUM) {
+        handle_spectrum();
+    }
 }
 
 void EventDispatcher::handle_baseband_queue() {
-	const auto message = shared_memory.baseband_message;
-	if( message ) {
-		on_message(message);
-	}
+    const auto message = shared_memory.baseband_message;
+    if (message) {
+        on_message(message);
+    }
 }
 
 void EventDispatcher::on_message(const Message* const message) {
-	switch(message->id) {
-	case Message::ID::Shutdown:
-		on_message_shutdown(*reinterpret_cast<const ShutdownMessage*>(message));
-		break;
+    switch (message->id) {
+        case Message::ID::Shutdown:
+            on_message_shutdown(*reinterpret_cast<const ShutdownMessage*>(message));
+            break;
 
-	default:
-		on_message_default(message);
-		shared_memory.baseband_message = nullptr;
-		break;
-	}
+        default:
+            on_message_default(message);
+            shared_memory.baseband_message = nullptr;
+            break;
+    }
 }
 
 void EventDispatcher::on_message_shutdown(const ShutdownMessage&) {
-	request_stop();
+    request_stop();
 }
 
 void EventDispatcher::on_message_default(const Message* const message) {
-	baseband_processor->on_message(message);
+    baseband_processor->on_message(message);
 }
 
 void EventDispatcher::handle_spectrum() {
-	const UpdateSpectrumMessage message;
-	baseband_processor->on_message(&message);
+    const UpdateSpectrumMessage message;
+    baseband_processor->on_message(&message);
 }

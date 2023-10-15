@@ -18,15 +18,15 @@
 # Boston, MA 02110-1301, USA.
 #
 
-cmake_minimum_required(VERSION 2.8.9)
+cmake_minimum_required(VERSION 3.0)
 cmake_policy(SET CMP0005 NEW)
 
 set(CMAKE_TOOLCHAIN_FILE ${CMAKE_CURRENT_LIST_DIR}/firmware/toolchain-arm-cortex-m.cmake)
 
 project(portapack-h1)
 
-#set(VERSION "")
-if (NOT DEFINED VERSION)
+set(VERSION "$ENV{VERSION_STRING}")
+if ("$ENV{VERSION_STRING}" STREQUAL "")
 	execute_process(
 		COMMAND git log -n 1 --format=%h
 		WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
@@ -38,14 +38,20 @@ if (NOT DEFINED VERSION)
 	if (GIT_VERSION_FOUND)
 		set(VERSION "unknown")
 	else (GIT_VERSION_FOUND)
-		set(VERSION "local-${GIT_VERSION}")
+		set(VERSION "${GIT_VERSION}")
 	endif (GIT_VERSION_FOUND)
 endif()
+
+execute_process(
+	COMMAND bash "-c" "echo ${VERSION} | md5sum | head -c 8"
+	OUTPUT_VARIABLE VERSION_MD5
+)
+set(VERSION_MD5 "0x${VERSION_MD5}")
 
 set(LICENSE_PATH ${CMAKE_CURRENT_LIST_DIR}/LICENSE)
 set(HARDWARE_PATH ${CMAKE_CURRENT_LIST_DIR}/hardware)
 
-add_subdirectory(hackrf/firmware/hackrf_usb)
+add_subdirectory(hackrf-portapack)
 
 set(HACKRF_FIRMWARE_DFU_FILENAME hackrf_usb.dfu)
 set(HACKRF_FIRMWARE_BIN_FILENAME hackrf_usb_ram.bin)
@@ -58,4 +64,5 @@ set(HACKRF_CPLD_XSVF_PATH ${HACKRF_PATH}/firmware/cpld/sgpio_if/${HACKRF_CPLD_XS
 set(HACKRF_FIRMWARE_DFU_IMAGE ${hackrf_usb_BINARY_DIR}/${HACKRF_FIRMWARE_DFU_FILENAME})
 set(HACKRF_FIRMWARE_BIN_IMAGE ${hackrf_usb_BINARY_DIR}/${HACKRF_FIRMWARE_BIN_FILENAME})
 
+enable_testing()
 add_subdirectory(firmware)

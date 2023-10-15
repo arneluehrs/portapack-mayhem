@@ -36,6 +36,8 @@
 #include "clock_manager.hpp"
 #include "temperature_logger.hpp"
 
+/* TODO: This would be better as a class to add
+ * guardrails on setting properties. */
 namespace portapack {
 
 extern portapack::IO io;
@@ -51,19 +53,18 @@ extern ClockManager clock_manager;
 extern ReceiverModel receiver_model;
 extern TransmitterModel transmitter_model;
 
-extern bool speaker_mode;
-void set_speaker_mode(const bool v);
-
 extern uint32_t bl_tick_counter;
 extern bool antenna_bias;
 
 extern TemperatureLogger temperature_logger;
 
+/* Get or set the antenna_bias flag.
+ * NB: Does not actually update the radio state. */
 void set_antenna_bias(const bool v);
 bool get_antenna_bias();
 
 bool init();
-void shutdown();
+void shutdown(const bool leave_screen_on = false);
 
 Backlight* backlight();
 

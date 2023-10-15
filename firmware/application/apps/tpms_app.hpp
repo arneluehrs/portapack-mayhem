@@ -27,7 +27,8 @@
 #include "ui_receiver.hpp"
 #include "ui_rssi.hpp"
 #include "ui_channel.hpp"
-
+#include "app_settings.hpp"
+#include "radio_state.hpp"
 #include "event_m0.hpp"
 
 #include "log_file.hpp"
@@ -38,52 +39,47 @@
 
 namespace std {
 
-constexpr bool operator==(const tpms::TransponderID& lhs, const tpms::TransponderID& rhs) {
-	return (lhs.value() == rhs.value());
-}
-
 } /* namespace std */
 
 struct TPMSRecentEntry {
-	using Key = std::pair<tpms::Reading::Type, tpms::TransponderID>;
+    using Key = std::pair<tpms::Reading::Type, tpms::TransponderID>;
 
-	static const Key invalid_key;
+    static const Key invalid_key;
 
-	tpms::Reading::Type type { invalid_key.first };
-	tpms::TransponderID id { invalid_key.second };
+    tpms::Reading::Type type{invalid_key.first};
+    tpms::TransponderID id{invalid_key.second};
 
-	size_t received_count { 0 };
+    size_t received_count{0};
 
-	Optional<Pressure> last_pressure { };
-	Optional<Temperature> last_temperature { };
-	Optional<tpms::Flags> last_flags { };
+    Optional<Pressure> last_pressure{};
+    Optional<Temperature> last_temperature{};
+    Optional<tpms::Flags> last_flags{};
 
-	TPMSRecentEntry(
-		const Key& key
-	) : type { key.first },
-		id { key.second }
-	{
-	}
+    TPMSRecentEntry(
+        const Key& key)
+        : type{key.first},
+          id{key.second} {
+    }
 
-	Key key() const {
-		return { type, id };
-	}
+    Key key() const {
+        return {type, id};
+    }
 
-	void update(const tpms::Reading& reading);
+    void update(const tpms::Reading& reading);
 };
 
 using TPMSRecentEntries = RecentEntries<TPMSRecentEntry>;
 
 class TPMSLogger {
-public:
-	Optional<File::Error> append(const std::filesystem::path& filename) {
-		return log_file.append(filename);
-	}
-	
-	void on_packet(const tpms::Packet& packet, const uint32_t target_frequency);
+   public:
+    Optional<File::Error> append(const std::filesystem::path& filename) {
+        return log_file.append(filename);
+    }
 
-private:
-	LogFile log_file { };
+    void on_packet(const tpms::Packet& packet, const uint32_t target_frequency);
+
+   private:
+    LogFile log_file{};
 };
 
 namespace ui {
@@ -91,91 +87,96 @@ namespace ui {
 using TPMSRecentEntriesView = RecentEntriesView<TPMSRecentEntries>;
 
 class TPMSAppView : public View {
-public:
-	TPMSAppView(NavigationView& nav);
-	~TPMSAppView();
+   public:
+    TPMSAppView(NavigationView& nav);
+    ~TPMSAppView();
 
-	void set_parent_rect(const Rect new_parent_rect) override;
+    void set_parent_rect(const Rect new_parent_rect) override;
 
-	// Prevent painting of region covered entirely by a child.
-	// TODO: Add flag to View that specifies view does not need to be cleared before painting.
-	void paint(Painter&) override { };
+    // Prevent painting of region covered entirely by a child.
+    // TODO: Add flag to View that specifies view does not need to be cleared before painting.
+    void paint(Painter&) override{};
 
-	void focus() override;
+    void focus() override;
 
-	std::string title() const override { return "TPMS"; };
+    std::string title() const override { return "TPMS RX"; };
 
-private:
-	static constexpr uint32_t initial_target_frequency = 315000000;
-	static constexpr uint32_t sampling_rate = 2457600;
-	static constexpr uint32_t baseband_bandwidth = 1750000;
+   private:
+    static constexpr uint32_t initial_target_frequency = 315000000;
 
-	MessageHandlerRegistration message_handler_packet {
-		Message::ID::TPMSPacket,
-		[this](Message* const p) {
-			const auto message = static_cast<const TPMSPacketMessage*>(p);
-			const tpms::Packet packet { message->packet, message->signal_type };
-			this->on_packet(packet);
-		}
-	};
+    RxRadioState radio_state_{
+        1750000 /* bandwidth */,
+        2457600 /* sampling rate */};
+    app_settings::SettingsManager settings_{
+        "rx_tpms", app_settings::Mode::RX};
 
-	static constexpr ui::Dim header_height = 1 * 16;
+    MessageHandlerRegistration message_handler_packet{
+        Message::ID::TPMSPacket,
+        [this](Message* const p) {
+            const auto message = static_cast<const TPMSPacketMessage*>(p);
+            const tpms::Packet packet{message->packet, message->signal_type};
+            this->on_packet(packet);
+        }};
 
-	RSSI rssi {
-		{ 21 * 8, 0, 6 * 8, 4 },
-	};
+    static constexpr ui::Dim header_height = 1 * 16;
 
-	Channel channel {
-		{ 21 * 8, 5, 6 * 8, 4 },
-	};
+    ui::Rect view_normal_rect{};
 
-	OptionsField options_band {
-		{ 0 * 8, 0 * 16 },
-		3,
-		{
-			{ "315", 315000000 },
-			{ "434", 433920000 },
-		}
-	};
+    RSSI rssi{
+        {21 * 8, 0, 6 * 8, 4},
+    };
 
-	RFAmpField field_rf_amp {
-		{ 13 * 8, 0 * 16 }
-	};
+    Channel channel{
+        {21 * 8, 5, 6 * 8, 4},
+    };
 
-	LNAGainField field_lna {
-		{ 15 * 8, 0 * 16 }
-	};
+    OptionsField options_band{
+        {0 * 8, 0 * 16},
+        3,
+        {
+            {"315", 315000000},
+            {"433", 433920000},
+        }};
 
-	VGAGainField field_vga {
-		{ 18 * 8, 0 * 16 }
-	};
+    OptionsField options_pressure{
+        {5 * 8, 0 * 16},
+        3,
+        {{"kPa", 0},
+         {"PSI", 1}}};
 
-	TPMSRecentEntries recent { };
-	std::unique_ptr<TPMSLogger> logger { };
+    OptionsField options_temperature{
+        {9 * 8, 0 * 16},
+        2,
+        {{STR_DEGREES_C, 0},
+         {STR_DEGREES_F, 1}}};
 
-	const RecentEntriesColumns columns { {
-		{ "Tp", 2 },
-		{ "ID", 8 },
-		{ "kPa", 3 },
-		{ "C", 3 },
-		{ "Cnt", 3 },
-		{ "Fl", 2 },
-	} };
-	TPMSRecentEntriesView recent_entries_view { columns, recent };
+    RFAmpField field_rf_amp{
+        {13 * 8, 0 * 16}};
 
-	uint32_t target_frequency_ = initial_target_frequency;
+    LNAGainField field_lna{
+        {15 * 8, 0 * 16}};
 
-	void on_packet(const tpms::Packet& packet);
-	void on_show_list();
+    VGAGainField field_vga{
+        {18 * 8, 0 * 16}};
 
-	void on_band_changed(const uint32_t new_band_frequency);
+    TPMSRecentEntries recent{};
+    std::unique_ptr<TPMSLogger> logger{};
 
-	uint32_t target_frequency() const;
-	void set_target_frequency(const uint32_t new_value);
+    const RecentEntriesColumns columns{{
+        {"Tp", 2},
+        {"ID", 8},
+        {"Pres", 4},
+        {"Temp", 4},
+        {"Cnt", 3},
+        {"Fl", 2},
+    }};
+    TPMSRecentEntriesView recent_entries_view{columns, recent};
 
-	uint32_t tuning_frequency() const;
+    void on_packet(const tpms::Packet& packet);
+    void on_show_list();
+    void update_view();
 };
 
 } /* namespace ui */
 
-#endif/*__TPMS_APP_H__*/
+#endif /*__TPMS_APP_H__*/

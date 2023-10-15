@@ -27,16 +27,24 @@
 
 enable_language(C CXX ASM)
 
+include(CheckCXXCompilerFlag)
+
 project(application)
 
 # Compiler options here.
-set(USE_OPT "-Os -g --specs=nano.specs")
+set(USE_OPT "-Os -g --specs=nano.specs -specs=nosys.specs")
 
 # C specific options here (added to USE_OPT).
 set(USE_COPT "-std=gnu99")
 
 # C++ specific options here (added to USE_OPT).
-set(USE_CPPOPT "-std=c++17 -fno-rtti -fno-exceptions -Weffc++ -Wuninitialized")
+check_cxx_compiler_flag("-std=c++20" cpp20_supported)
+if(cpp20_supported)
+	set(USE_CPPOPT "-std=c++20")
+else()
+	set(USE_CPPOPT "-std=c++17")
+endif()
+set(USE_CPPOPT "${USE_CPPOPT} -flto -fno-rtti -fno-exceptions -Weffc++ -Wuninitialized -Wno-volatile")
 
 # Enable this if you want the linker to remove unused code and data
 set(USE_LINK_GC yes)
@@ -89,6 +97,7 @@ include(${CHIBIOS_PORTAPACK}/os/ports/GCC/ARMCMx/LPC43xx_M0/port.cmake)
 include(${CHIBIOS}/os/kernel/kernel.cmake)
 include(${CHIBIOS_PORTAPACK}/os/various/fatfs_bindings/fatfs.cmake)
 include(${CHIBIOS}/test/test.cmake)
+include(external/external.cmake)
 
 # Define linker script file here
 set(LDSCRIPT ${PORTLD}/LPC43xx_M0.ld)
@@ -103,6 +112,7 @@ set(CSRC
 	${PLATFORMSRC}
 	${BOARDSRC}
 	${FATFSSRC}
+	firmware_info.c
 )
 
 # C++ sources that can be compiled in ARM or THUMB mode depending on the global
@@ -124,7 +134,7 @@ set(CPPSRC
 	${COMMON}/cpld_max5.cpp
 	${COMMON}/cpld_update.cpp
 	${COMMON}/cpld_xilinx.cpp
-	${COMMON}/debug.cpp
+	debug.cpp
 	${COMMON}/ert_packet.cpp
 	${COMMON}/epirb_packet.cpp
 	${COMMON}/event.cpp
@@ -155,24 +165,33 @@ set(CPPSRC
 	${COMMON}/ui_widget.cpp
 	${COMMON}/utility.cpp
 	${COMMON}/wm8731.cpp
+	${COMMON}/performance_counter.cpp
+	app_settings.cpp
 	audio.cpp
 	baseband_api.cpp
 	capture_thread.cpp
 	clock_manager.cpp
 	core_control.cpp
+	database.cpp
 	de_bruijn.cpp
 	#emu_cc1101.cpp
 	rfm69.cpp
 	event_m0.cpp
+	file_reader.cpp
 	file.cpp
+	freqman_db.cpp
 	freqman.cpp
+	io_convert.cpp
 	io_file.cpp
 	io_wave.cpp
+	iq_trim.cpp
 	irq_controls.cpp
 	irq_lcd_frame.cpp
 	irq_rtc.cpp
 	log_file.cpp
+	metadata_file.cpp
 	portapack.cpp
+	qrcodegen.cpp
 	radio.cpp
 	receiver_model.cpp
 	recent_entries.cpp
@@ -191,6 +210,7 @@ set(CPPSRC
 	hw/debounce.cpp
 	hw/encoder.cpp
 	hw/max2837.cpp
+	hw/max2839.cpp
 	hw/max5864.cpp
 	hw/rffc507x.cpp
 	hw/rffc507x_spi.cpp
@@ -205,69 +225,87 @@ set(CPPSRC
 	ui/ui_alphanum.cpp
 	ui/ui_audio.cpp
 	ui/ui_channel.cpp
+	ui/ui_font_fixed_5x8.cpp
 	ui/ui_font_fixed_8x16.cpp
 	ui/ui_geomap.cpp
+	ui/ui_qrcode.cpp
 	ui/ui_menu.cpp
 	ui/ui_btngrid.cpp
 	ui/ui_receiver.cpp
 	ui/ui_rssi.cpp
+	ui/ui_freqlist.cpp
 	ui/ui_tv.cpp
 	ui/ui_spectrum.cpp
+	ui/ui_styles.cpp
 	ui/ui_tabview.cpp
 	ui/ui_textentry.cpp
+	ui/ui_tone_key.cpp
 	ui/ui_transmitter.cpp
-	apps/ui_about_simple.cpp
-	apps/ui_adsb_rx.cpp
-	apps/ui_adsb_tx.cpp
-	apps/ui_afsk_rx.cpp
-	apps/ui_aprs_rx.cpp
-	apps/ui_btle_rx.cpp
-	apps/ui_nrf_rx.cpp
-	apps/ui_aprs_tx.cpp
-	apps/ui_bht_tx.cpp
-	apps/ui_coasterp.cpp
-	apps/ui_debug.cpp
-	apps/ui_encoders.cpp
-	apps/ui_epirb.cpp
-	apps/ui_fileman.cpp
-	apps/ui_freqman.cpp
-	apps/ui_jammer.cpp
-	apps/ui_keyfob.cpp
-	apps/ui_lcr.cpp
-	apps/lge_app.cpp
-	apps/ui_looking_glass_app.cpp
-	apps/ui_mictx.cpp
-	apps/ui_modemsetup.cpp
-	apps/ui_morse.cpp
-	# apps/ui_nuoptix.cpp
-	apps/ui_pocsag_tx.cpp
-	apps/ui_rds.cpp
-	apps/ui_remote.cpp
-	apps/ui_scanner.cpp
-	apps/ui_search.cpp
-	apps/ui_sd_wipe.cpp
-	apps/ui_settings.cpp
-	apps/ui_siggen.cpp
-	apps/ui_sonde.cpp
-	apps/ui_sstvtx.cpp
-	# apps/ui_test.cpp
-	apps/ui_tone_search.cpp
-	apps/ui_touch_calibration.cpp
-	apps/ui_touchtunes.cpp
-	apps/ui_view_wav.cpp
-	apps/ui_whipcalc.cpp
 	apps/acars_app.cpp
 	apps/ais_app.cpp
 	apps/analog_audio_app.cpp
 	apps/analog_tv_app.cpp
 	apps/capture_app.cpp
 	apps/ert_app.cpp
+	apps/gps_sim_app.cpp
+	apps/lge_app.cpp
 	apps/lge_app.cpp
 	apps/pocsag_app.cpp
-	apps/replay_app.cpp
-	apps/gps_sim_app.cpp
+	# apps/replay_app.cpp
 	apps/soundboard_app.cpp
 	apps/tpms_app.cpp
+	apps/tpms_app.cpp
+	apps/ui_about_simple.cpp
+	apps/ui_adsb_rx.cpp
+	apps/ui_adsb_tx.cpp
+	apps/ui_aprs_rx.cpp
+	apps/ui_aprs_tx.cpp
+	apps/ui_bht_tx.cpp
+	apps/ui_btle_rx.cpp
+	apps/ui_coasterp.cpp
+	apps/ui_debug.cpp
+	apps/ui_dfu_menu.cpp
+	apps/ui_encoders.cpp
+	apps/ui_epirb.cpp
+	apps/ui_fileman.cpp
+	apps/ui_flash_utility.cpp
+	apps/ui_freqman.cpp
+	apps/ui_iq_trim.cpp
+	apps/ui_jammer.cpp
+    # apps/ui_keyfob.cpp
+	apps/ui_lcr.cpp
+	apps/ui_level.cpp  
+	apps/ui_looking_glass_app.cpp
+	apps/ui_mictx.cpp
+	apps/ui_modemsetup.cpp
+	apps/ui_morse.cpp
+	apps/ui_nrf_rx.cpp
+	# apps/ui_nuoptix.cpp
+	apps/ui_playlist.cpp
+	apps/ui_pocsag_tx.cpp
+	apps/ui_rds.cpp
+	apps/ui_recon_settings.cpp
+	apps/ui_recon.cpp  
+	apps/ui_remote.cpp
+	apps/ui_scanner.cpp
+	apps/ui_sd_over_usb.cpp
+	apps/ui_sd_wipe.cpp
+	apps/ui_search.cpp
+	apps/ui_settings.cpp
+	apps/ui_siggen.cpp
+	apps/ui_sonde.cpp
+	apps/ui_spectrum_painter_image.cpp
+	apps/ui_spectrum_painter_text.cpp
+	apps/ui_spectrum_painter.cpp
+	apps/ui_ss_viewer.cpp
+	apps/ui_sstvtx.cpp
+	# apps/ui_test.cpp
+	apps/ui_text_editor.cpp
+	apps/ui_tone_search.cpp
+	apps/ui_touch_calibration.cpp
+	apps/ui_touchtunes.cpp
+	apps/ui_view_wav.cpp
+	apps/ui_whipcalc.cpp
 	protocols/aprs.cpp
 	protocols/ax25.cpp
 	protocols/bht.cpp
@@ -282,9 +320,13 @@ set(CPPSRC
 	# ui_replay_view.cpp
 	# ui_script.cpp
 	ui_sd_card_debug.cpp
+	config_mode.cpp
 	${CPLD_20150901_DATA_CPP}
 	${CPLD_20170522_DATA_CPP}
 	${HACKRF_CPLD_DATA_CPP}
+	ui_external_items_menu_loader.cpp
+
+	${EXTCPPSRC}
 )
 
 # C sources to be compiled in ARM mode regardless of the global setting.
@@ -308,7 +350,10 @@ set(TCSRC)
 set(TCPPSRC)
 
 # List ASM source files here
-set(ASMSRC ${PORTASM})
+set(ASMSRC
+	${PORTASM}
+	lz4.S
+)
 
 set(INCDIR ${CMAKE_CURRENT_BINARY_DIR} ${COMMON} ${PORTINC} ${KERNINC} ${TESTINC}
 	${HALINC} ${PLATFORMINC} ${BOARDINC}
@@ -357,7 +402,7 @@ set(CPPWARN "-Wall -Wextra -Wno-psabi")
 # List all default C defines here, like -D_DEBUG=1
 # TODO: Switch -DCRT0_INIT_DATA depending on load from RAM or SPIFI?
 # NOTE: _RANDOM_TCC to kill a GCC 4.9.3 error with std::max argument types
-set(DDEFS "-DLPC43XX -DLPC43XX_M0 -D__NEWLIB__ -DHACKRF_ONE -DTOOLCHAIN_GCC -DTOOLCHAIN_GCC_ARM -D_RANDOM_TCC=0 -D'VERSION_STRING=\"${VERSION}\"'")
+set(DDEFS "-DLPC43XX -DLPC43XX_M0 -D__NEWLIB__ -DHACKRF_ONE -DTOOLCHAIN_GCC -DTOOLCHAIN_GCC_ARM -D_RANDOM_TCC=0 -D'VERSION_STRING=\"${VERSION}\"' -DVERSION_MD5=${VERSION_MD5}")
 
 # List all default ASM defines here, like -D_DEBUG=1
 set(DADEFS)
@@ -426,12 +471,13 @@ set_target_properties(${PROJECT_NAME}.elf PROPERTIES LINK_DEPENDS ${LDSCRIPT})
 add_definitions(${DEFS})
 include_directories(. ${INCDIR})
 link_directories(${LLIBDIR})
-target_link_libraries(${PROJECT_NAME}.elf ${LIBS})
+target_link_libraries(${PROJECT_NAME}.elf ${LIBS} "-L${CMAKE_CURRENT_LIST_DIR}/external")
 target_link_libraries(${PROJECT_NAME}.elf -Wl,-Map=${PROJECT_NAME}.map)
 
 add_custom_command(
 	OUTPUT ${PROJECT_NAME}.bin
-	COMMAND ${CMAKE_OBJCOPY} -O binary ${PROJECT_NAME}.elf ${PROJECT_NAME}.bin
+	COMMAND ${CMAKE_OBJCOPY} -v -O binary ${PROJECT_NAME}.elf ${PROJECT_NAME}.bin --remove-section=.external_app_*
+	COMMAND ${EXPORT_EXTERNAL_APP_IMAGES} ${PROJECT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_OBJCOPY} ${EXTAPPLIST}
 	DEPENDS ${PROJECT_NAME}.elf
 )
 

@@ -21,102 +21,65 @@
  */
 
 #include "ui_textentry.hpp"
-//#include "portapack_persistent_memory.hpp"
 #include "ui_alphanum.hpp"
-//#include "ui_handwrite.hpp"
 
 using namespace portapack;
 
 namespace ui {
 
-void text_prompt(NavigationView& nav, std::string& str, const size_t max_length, const std::function<void(std::string&)> on_done) {
-	//if (persistent_memory::ui_config_textentry() == 0) {
-		auto te_view = nav.push<AlphanumView>(str, max_length);
-		te_view->on_changed = [on_done](std::string& value) {
-			if (on_done)
-				on_done(value);
-		};
-	/*} else {
-		auto te_view = nav.push<HandWriteView>(str, max_length);
-		te_view->on_changed = [on_done](std::string * value) {
-			if (on_done)
-				on_done(value);
-		};
-	}*/
+void text_prompt(
+    NavigationView& nav,
+    std::string& str,
+    size_t max_length,
+    std::function<void(std::string&)> on_done) {
+    text_prompt(nav, str, str.length(), max_length, on_done);
 }
 
-void TextEntryView::update_text() {
-	if (cursor_pos < 30)
-		text_input.set(_str + std::string(_max_length - _str.length(), ' '));
-	else
-		text_input.set('<' + _str.substr(cursor_pos - 29, 29));
-		
-	draw_cursor();
+void text_prompt(
+    NavigationView& nav,
+    std::string& str,
+    uint32_t cursor_pos,
+    size_t max_length,
+    std::function<void(std::string&)> on_done) {
+    auto te_view = nav.push<AlphanumView>(str, max_length);
+    te_view->set_cursor(cursor_pos);
+    te_view->on_changed = [on_done](std::string& value) {
+        if (on_done)
+            on_done(value);
+    };
 }
+
+/* TextEntryView ***********************************************************/
 
 void TextEntryView::char_delete() {
-	if (!cursor_pos) return;
-	
-	cursor_pos--;
-	_str.resize(cursor_pos);
+    text_input.char_delete();
 }
 
 void TextEntryView::char_add(const char c) {
-	if (cursor_pos >= _max_length) return;
-	
-	_str += c;
-	cursor_pos++;
+    text_input.char_add(c);
 }
 
-void TextEntryView::draw_cursor() {
-	Point draw_pos;
-	
-	draw_pos = { text_input.screen_rect().location().x() + std::min((Coord)cursor_pos, (Coord)28) * 8,
-					text_input.screen_rect().location().y() + 16 };
-	
-	// Erase previous
-	display.fill_rectangle(
-		{ { text_input.screen_rect().location().x(), draw_pos.y() }, { text_input.screen_rect().size().width(), 4 } },
-		Color::black()
-	);
-	// Draw new
-	display.fill_rectangle(
-		{ draw_pos, { 8, 4 } },
-		Color::white()
-	);
+void TextEntryView::set_cursor(uint32_t pos) {
+    text_input.set_cursor(pos);
 }
 
 void TextEntryView::focus() {
-	button_ok.focus();
+    text_input.focus();
 }
 
 TextEntryView::TextEntryView(
-	NavigationView& nav,
-	std::string& str,
-	size_t max_length
-) : _str(str),
-	_max_length(max_length)
-{
-	
-	// Trim from right
-	//_str->erase(std::find_if(_str->rbegin(), _str->rend(), std::not1(std::ptr_fun<int, int>(std::isspace))).base(), _str->end());
-	if (_str.length() > _max_length)
-		_str.resize(_max_length);
-	_str.reserve(_max_length);
-	
-	cursor_pos = _str.length();
-	
-	add_children({
-		&text_input,
-		&button_ok
-	});
-	
-	button_ok.on_select = [this, &nav](Button&) {
-		_str.resize(cursor_pos);
-		if (on_changed)
-			on_changed(_str);
-		nav.pop();
-	};
+    NavigationView& nav,
+    std::string& str,
+    size_t max_length)
+    : text_input{str, max_length, {0, 0}} {
+    add_children({&text_input,
+                  &button_ok});
+
+    button_ok.on_select = [this, &str, &nav](Button&) {
+        if (on_changed)
+            on_changed(str);
+        nav.pop();
+    };
 }
 
 } /* namespace ui */
