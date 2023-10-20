@@ -524,14 +524,6 @@ bool show_gui_return_icon() {  // add return icon in touchscreen menu
     return data->ui_config.show_gui_return_icon != 0;
 }
 
-bool load_app_settings() {  // load (last saved) app settings on startup of app
-    return data->ui_config.load_app_settings != 0;
-}
-
-bool save_app_settings() {  // save app settings when closing app
-    return data->ui_config.save_app_settings != 0;
-}
-
 bool show_bigger_qr_code() {  // show bigger QR code
     return data->ui_config.show_large_qr_code != 0;
 }
@@ -876,6 +868,8 @@ bool should_use_sdcard_for_pmem() {
 
 int save_persistent_settings_to_file() {
     File outfile;
+
+    make_new_directory(SETTINGS_DIR);
     auto error = outfile.create(PMEM_SETTING_FILE);
     if (error)
         return false;
@@ -920,7 +914,9 @@ bool debug_dump() {
         painter.draw_string({0, 320 - 16}, ui::Styles::red, "ERROR DUMPING " + filename.filename().string() + " !");
         return false;
     }
-    pmem_dump_file.write_line("FW version " VERSION_STRING);
+    pmem_dump_file.write_line("FW version: " VERSION_STRING);
+    pmem_dump_file.write_line("Ext APPS version req'd: 0x" + to_string_hex(VERSION_MD5));
+    pmem_dump_file.write_line("GCC version: " + to_string_dec_int(__GNUC__) + "." + to_string_dec_int(__GNUC_MINOR__) + "." + to_string_dec_int(__GNUC_PATCHLEVEL__));
 
     // write persistent memory
     pmem_dump_file.write_line("\n[Persistent Memory]");

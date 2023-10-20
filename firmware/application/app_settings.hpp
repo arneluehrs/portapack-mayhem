@@ -36,6 +36,9 @@
 #include "max283x.hpp"
 #include "string_format.hpp"
 
+// Folder to store app settings, pmem_fileflag, and date_fileflag
+#define SETTINGS_DIR u"/SETTINGS"
+
 // Bring in the string_view literal.
 using std::literals::operator""sv;
 
@@ -170,8 +173,6 @@ class SettingsManager {
     /* True if settings were successfully loaded from file. */
     bool loaded() const { return loaded_; }
 
-    /* True if radio settings were successfully loaded from file. */
-    bool radio_loaded() const { return radio_loaded_; }
     Mode mode() const { return settings_.mode; }
 
     AppSettings& raw() { return settings_; }
@@ -181,7 +182,6 @@ class SettingsManager {
     AppSettings settings_;
     SettingBindings bindings_;
     bool loaded_;
-    bool radio_loaded_;
 };
 
 }  // namespace app_settings
