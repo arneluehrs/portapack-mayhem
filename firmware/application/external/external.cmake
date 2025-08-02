@@ -231,7 +231,11 @@ set(EXTCPPSRC
 
 	#battleship
 	external/battleship/main.cpp
-	external/battleship/ui_battleship.cpp		
+	external/battleship/ui_battleship.cpp
+
+	#epirb_rx
+	external/epirb_rx/main.cpp
+	external/epirb_rx/ui_epirb_rx.cpp		
 )
 
 set(EXTAPPLIST
@@ -291,4 +295,5 @@ set(EXTAPPLIST
 	spaceinv
 	blackjack
 	battleship
+	epirb_rx
 )
