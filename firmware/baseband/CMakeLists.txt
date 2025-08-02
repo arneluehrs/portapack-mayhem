@@ -361,13 +361,6 @@ set(MODE_CPPSRC
 )
 DeclareTargets(PAIS ais)
 
-### EPIRB
-
-set(MODE_CPPSRC
-	proc_epirb.cpp
-)
-DeclareTargets(PEPI epirb)
-
 ### AM Audio
 
 set(MODE_CPPSRC
