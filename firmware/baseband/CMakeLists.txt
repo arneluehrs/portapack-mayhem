@@ -577,6 +577,7 @@ set(MODE_CPPSRC
 	proc_afskrx.cpp
 )
 DeclareTargets(PAFR afskrx)
+
 ### EPIRB
 
 set(MODE_CPPSRC

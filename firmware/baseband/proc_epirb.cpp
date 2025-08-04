@@ -35,7 +35,6 @@ EPIRBProcessor::EPIRBProcessor() {
     decim_0.configure(taps_11k0_decim_0.taps);
     decim_1.configure(taps_11k0_decim_1.taps);
 
-    baseband_thread.start();
 }
 
 void EPIRBProcessor::execute(const buffer_c8_t& buffer) {

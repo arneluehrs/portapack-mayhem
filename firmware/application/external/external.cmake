@@ -110,12 +110,12 @@ set(EXTCPPSRC
 	#wefax_rx
 	external/wefax_rx/main.cpp
 	external/wefax_rx/ui_wefax_rx.cpp
-	
+
 	#noaaapt_rx
 	external/noaaapt_rx/main.cpp
 	external/noaaapt_rx/ui_noaaapt_rx.cpp
-		
-	
+
+
 
 	#shoppingcart_lock
 	external/shoppingcart_lock/main.cpp
@@ -215,15 +215,15 @@ set(EXTCPPSRC
 
 	#gfxEQ
 	external/gfxeq/main.cpp
-	external/gfxeq/ui_gfxeq.cpp	
+	external/gfxeq/ui_gfxeq.cpp
 
 	#detector_rx
 	external/detector_rx/main.cpp
-	external/detector_rx/ui_detector_rx.cpp		
+	external/detector_rx/ui_detector_rx.cpp
 
 	#space_invaders
 	external/spaceinv/main.cpp
-	external/spaceinv/ui_spaceinv.cpp		
+	external/spaceinv/ui_spaceinv.cpp
 
 	#blackjack
 	external/blackjack/main.cpp
@@ -234,8 +234,8 @@ set(EXTCPPSRC
 	external/battleship/ui_battleship.cpp
 
 	#epirb_rx
-	external/epirb_rx/main.cpp
-	external/epirb_rx/ui_epirb_rx.cpp		
+	#external/epirb_rx/main.cpp
+	#external/epirb_rx/ui_epirb_rx.cpp
 )
 
 set(EXTAPPLIST
@@ -295,5 +295,5 @@ set(EXTAPPLIST
 	spaceinv
 	blackjack
 	battleship
-	epirb_rx
+	#epirb_rx
 )
