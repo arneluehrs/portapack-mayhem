@@ -211,7 +211,7 @@ EPIRBBeaconDetailView::EPIRBBeaconDetailView(NavigationView& nav) {
 
     button_see_map.on_select = [this, &nav](Button&) {
         if (beacon_.location.valid) {
-/*             nav.push<GeoMapView>(
+            nav.push<GeoMapView>(
                 to_string_hex(beacon_.beacon_id, 8), // tag as string
                 0, // altitude
                 GeoPos::alt_unit::METERS,
@@ -222,7 +222,7 @@ EPIRBBeaconDetailView::EPIRBBeaconDetailView(NavigationView& nav) {
                 [this]() {
                     if (on_close) on_close();
                 }
-            ); */
+            );
         }
     };
 }
@@ -288,7 +288,7 @@ Rect EPIRBBeaconDetailView::draw_field(
 }
 
 EPIRBAppView::EPIRBAppView(NavigationView& nav) : nav_(nav) {
-/*    baseband::run_image(portapack::spi_flash::image_tag_epirb); */
+/*    baseband::run_image(portapack::spi_flash::image_tag_epirb_rx); */
     baseband::run_prepared_image(portapack::memory::map::m4_code.base());
 
     add_children({
@@ -413,7 +413,7 @@ void EPIRBAppView::on_show_map() {
         // Find latest beacon with valid location
         for (auto it = recent_beacons.rbegin(); it != recent_beacons.rend(); ++it) {
             if (it->location.valid) {
-                /* // Create a GeoMapView with all beacon locations
+                // Create a GeoMapView with all beacon locations
                 auto map_view = nav_.push<GeoMapView>(
                     "EPIRB", // tag
                     0, // altitude
@@ -436,7 +436,7 @@ void EPIRBAppView::on_show_map() {
                         map_view->store_marker(marker);
                     }
                 }
-                return; */
+                return;
             }
         }
     }

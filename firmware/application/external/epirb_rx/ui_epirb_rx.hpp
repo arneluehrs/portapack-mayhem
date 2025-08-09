@@ -27,7 +27,7 @@
 #include "ui.hpp"
 #include "ui_navigation.hpp"
 #include "ui_receiver.hpp"
-/* #include "ui_geomap.hpp" */
+#include "ui_geomap.hpp"
 
 /* #include "event_m0.hpp" */
 #include "log_file.hpp"
@@ -136,8 +136,8 @@ public:
 
     void focus() override;
     void paint(Painter&) override;
-/*
-    GeoMapView* get_geomap_view() { return geomap_view; } */
+
+    GeoMapView* get_geomap_view() { return geomap_view; }
 
 private:
     ui::external_app::epirb_rx::EPIRBBeacon beacon_{};
@@ -151,7 +151,7 @@ private:
         "See on map"
     };
 
- /*    GeoMapView* geomap_view{nullptr}; */
+    GeoMapView* geomap_view{nullptr};
 
     Rect draw_field(
         Painter& painter,

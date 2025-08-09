@@ -583,7 +583,7 @@ DeclareTargets(PAFR afskrx)
 set(MODE_CPPSRC
 	proc_epirb.cpp
 )
-DeclareTargets(PEPI epirb)
+DeclareTargets(PEPI epirb_rx)
 
 
 ### NRF RX
