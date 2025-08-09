@@ -194,8 +194,8 @@ set(EXTCPPSRC
 	external/breakout/ui_breakout.cpp
 
 	#dinogame
-	#external/dinogame/main.cpp
-	#external/dinogame/ui_dinogame.cpp
+	external/dinogame/main.cpp
+	external/dinogame/ui_dinogame.cpp
 
 	#doom
 	external/doom/main.cpp
