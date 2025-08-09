@@ -19,18 +19,24 @@
  * Boston, MA 02110-1301, USA.
  */
 
+#include "baseband_api.hpp"
+#include "portapack_persistent_memory.hpp"
+#include "file_path.hpp"
+#include "audio.hpp"
+
 #include "ui_epirb_rx.hpp"
+
+using namespace portapack;
 
 #include "rtc_time.hpp"
 #include "string_format.hpp"
-#include "portapack.hpp"
-#include "baseband_api.hpp"
-#include "audio.hpp"
-#include "message.hpp"
-#include "file_path.hpp"
-#include "portapack_persistent_memory.hpp"
 
-using namespace portapack;
+
+#include "message.hpp"
+
+
+
+
 
 namespace ui::external_app::epirb_rx {
 
@@ -205,7 +211,7 @@ EPIRBBeaconDetailView::EPIRBBeaconDetailView(NavigationView& nav) {
 
     button_see_map.on_select = [this, &nav](Button&) {
         if (beacon_.location.valid) {
-            nav.push<GeoMapView>(
+/*             nav.push<GeoMapView>(
                 to_string_hex(beacon_.beacon_id, 8), // tag as string
                 0, // altitude
                 GeoPos::alt_unit::METERS,
@@ -216,7 +222,7 @@ EPIRBBeaconDetailView::EPIRBBeaconDetailView(NavigationView& nav) {
                 [this]() {
                     if (on_close) on_close();
                 }
-            );
+            ); */
         }
     };
 }
@@ -407,7 +413,7 @@ void EPIRBAppView::on_show_map() {
         // Find latest beacon with valid location
         for (auto it = recent_beacons.rbegin(); it != recent_beacons.rend(); ++it) {
             if (it->location.valid) {
-                // Create a GeoMapView with all beacon locations
+                /* // Create a GeoMapView with all beacon locations
                 auto map_view = nav_.push<GeoMapView>(
                     "EPIRB", // tag
                     0, // altitude
@@ -430,7 +436,7 @@ void EPIRBAppView::on_show_map() {
                         map_view->store_marker(marker);
                     }
                 }
-                return;
+                return; */
             }
         }
     }

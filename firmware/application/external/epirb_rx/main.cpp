@@ -77,7 +77,7 @@ __attribute__((section(".external_app.app_epirb_rx.application_information"), us
     /*.menu_location = */ app_location_t::RX,
     /*.desired_menu_position = */ -1,
 
-    /*.m4_app_tag = portapack::spi_flash::image_tag_epirb */ {'P', 'E', 'P', 'B'},
+    /*.m4_app_tag = portapack::spi_flash::image_tag_epirb_rx */ {'P', 'E', 'P', 'I'},
     /*.m4_app_offset = */ 0x00000000,  // will be filled at compile time
 };
 }

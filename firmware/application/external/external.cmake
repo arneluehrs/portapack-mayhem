@@ -104,8 +104,8 @@ set(EXTCPPSRC
 	external/random_password/sha512.h
 
 	#acars
-	external/acars_rx/main.cpp
-	external/acars_rx/acars_app.cpp
+	#external/acars_rx/main.cpp
+	#external/acars_rx/acars_app.cpp
 
 	#wefax_rx
 	external/wefax_rx/main.cpp
@@ -194,8 +194,8 @@ set(EXTCPPSRC
 	external/breakout/ui_breakout.cpp
 
 	#dinogame
-	external/dinogame/main.cpp
-	external/dinogame/ui_dinogame.cpp
+	#external/dinogame/main.cpp
+	#external/dinogame/ui_dinogame.cpp
 
 	#doom
 	external/doom/main.cpp
@@ -234,8 +234,8 @@ set(EXTCPPSRC
 	external/battleship/ui_battleship.cpp
 
 	#epirb_rx
-	#external/epirb_rx/main.cpp
-	#external/epirb_rx/ui_epirb_rx.cpp
+	external/epirb_rx/main.cpp
+	external/epirb_rx/ui_epirb_rx.cpp
 )
 
 set(EXTAPPLIST
@@ -285,7 +285,7 @@ set(EXTAPPLIST
 	snake
 	stopwatch
 	breakout
-	dinogame
+	#dinogame
 	doom
 	debug_pmem
 	scanner
@@ -295,5 +295,5 @@ set(EXTAPPLIST
 	spaceinv
 	blackjack
 	battleship
-	#epirb_rx
+	epirb_rx
 )

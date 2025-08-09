@@ -22,21 +22,23 @@
 #ifndef __UI_EPIRB_RX_H__
 #define __UI_EPIRB_RX_H__
 
+#include "app_settings.hpp"
+#include "radio_state.hpp"
 #include "ui.hpp"
 #include "ui_navigation.hpp"
 #include "ui_receiver.hpp"
-#include "ui_geomap.hpp"
+/* #include "ui_geomap.hpp" */
 
-#include "event_m0.hpp"
+/* #include "event_m0.hpp" */
 #include "log_file.hpp"
-#include "app_settings.hpp"
-#include "radio_state.hpp"
-#include "baseband_packet.hpp"
 
-#include <cstdint>
+
+/* #include "baseband_packet.hpp"
+ */
+/* #include <cstdint>
 #include <cstddef>
 #include <string>
-#include <array>
+#include <array> */
 
 namespace ui::external_app::epirb_rx {
 
@@ -101,7 +103,7 @@ private:
     static std::string decode_vessel_name(const std::array<uint8_t, 16>& data);
 };
 
-} // namespace epirb
+} // namespace ui::external_app::epirb_rx
 
 class EPIRBLogger {
 public:
@@ -134,8 +136,8 @@ public:
 
     void focus() override;
     void paint(Painter&) override;
-
-    GeoMapView* get_geomap_view() { return geomap_view; }
+/*
+    GeoMapView* get_geomap_view() { return geomap_view; } */
 
 private:
     ui::external_app::epirb_rx::EPIRBBeacon beacon_{};
@@ -149,7 +151,7 @@ private:
         "See on map"
     };
 
-    GeoMapView* geomap_view{nullptr};
+ /*    GeoMapView* geomap_view{nullptr}; */
 
     Rect draw_field(
         Painter& painter,
