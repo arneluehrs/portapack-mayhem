@@ -104,8 +104,8 @@ set(EXTCPPSRC
 	external/random_password/sha512.h
 
 	#acars
-	#external/acars_rx/main.cpp
-	#external/acars_rx/acars_app.cpp
+	external/acars_rx/main.cpp
+	external/acars_rx/acars_app.cpp
 
 	#wefax_rx
 	external/wefax_rx/main.cpp
@@ -264,7 +264,7 @@ set(EXTAPPLIST
 	morse_tx
 	sstvtx
 	random_password
-	#acars_rx
+	acars_rx
 	ookbrute
 	ook_editor
 	wefax_rx
@@ -285,7 +285,7 @@ set(EXTAPPLIST
 	snake
 	stopwatch
 	breakout
-	#dinogame
+	dinogame
 	doom
 	debug_pmem
 	scanner
