@@ -38,11 +38,10 @@
 #include "baseband_packet.hpp"
 #include "message.hpp"
 #include "buffer.hpp"
-/* #include "timestamp.hpp" // Added for Timestamp member */
+
 
 // Forward declarations for types only used as pointers/references
 class Message;
-class AudioBeepMessage;
 namespace baseband { class Packet; }
 
 // EPIRB 406 MHz Emergency Position Indicating Radio Beacon
