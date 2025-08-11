@@ -13,8 +13,8 @@ set(EXTCPPSRC
 	external/font_viewer/ui_font_viewer.cpp
 
 	#blespam
-	external/blespam/main.cpp
-	external/blespam/ui_blespam.cpp
+	#external/blespam/main.cpp
+	#external/blespam/ui_blespam.cpp
 
 	#analogtv
 	external/analogtv/main.cpp
@@ -70,8 +70,8 @@ set(EXTCPPSRC
 	external/foxhunt/ui_foxhunt_rx.hpp
 
 	#audio_test
-	external/audio_test/main.cpp
-	external/audio_test/ui_audio_test.cpp
+	#external/audio_test/main.cpp
+	#external/audio_test/ui_audio_test.cpp
 
 	#wardrivemap
 	external/wardrivemap/main.cpp
@@ -86,8 +86,8 @@ set(EXTCPPSRC
 	external/protoview/ui_protoview.cpp
 
 	#adsbtx
-	external/adsbtx/main.cpp
-	external/adsbtx/ui_adsb_tx.cpp
+	#external/adsbtx/main.cpp
+	#external/adsbtx/ui_adsb_tx.cpp
 
 	#morse_tx
 	external/morse_tx/main.cpp
@@ -146,8 +146,8 @@ set(EXTCPPSRC
 	external/mcu_temperature/mcu_temperature.cpp
 
 	#fmradio
-	external/fmradio/main.cpp
-	external/fmradio/ui_fmradio.cpp
+	#external/fmradio/main.cpp
+	#external/fmradio/ui_fmradio.cpp
 
 	#tuner
 	external/tuner/main.cpp
@@ -242,7 +242,7 @@ set(EXTAPPLIST
 	afsk_rx
 	calculator
 	font_viewer
-	blespam
+	#blespam
 	nrf_rx
 	analogtv
 	coasterp
@@ -255,12 +255,12 @@ set(EXTAPPLIST
 	tetris
 	extsensors
 	foxhunt_rx
-	audio_test
+	#audio_test
 	wardrivemap
 	cvs_spam
 	tpmsrx
 	protoview
-	adsbtx
+	#adsbtx
 	morse_tx
 	sstvtx
 	random_password
@@ -273,7 +273,7 @@ set(EXTAPPLIST
 	flippertx
 	remote
 	mcu_temperature
-	fmradio
+	#fmradio
 	tuner
 	metronome
 	app_manager

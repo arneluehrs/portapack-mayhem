@@ -22,7 +22,6 @@
 #include "baseband_api.hpp"
 #include "portapack_persistent_memory.hpp"
 #include "file_path.hpp"
-#include "audio.hpp"
 
 #include "ui_epirb_rx.hpp"
 
@@ -151,9 +150,9 @@ std::string EPIRBDecoder::decode_vessel_name(const std::array<uint8_t, 16>& /* d
     return "";
 }
 
-} // namespace ui::external_app::epirb_rx
 
-void EPIRBLogger::on_packet(const ui::external_app::epirb_rx::EPIRBBeacon& beacon) {
+
+void EPIRBLogger::on_packet(const EPIRBBeacon& beacon) {
     std::string entry = "EPIRB," +
                        to_string_dec_uint(beacon.beacon_id, 15, '0') + "," +
                        to_string_dec_uint(static_cast<uint8_t>(beacon.beacon_type)) + "," +
@@ -171,35 +170,33 @@ void EPIRBLogger::on_packet(const ui::external_app::epirb_rx::EPIRBBeacon& beaco
     log_file.write_entry(beacon.timestamp, entry);
 }
 
-namespace ui {
-
-std::string format_beacon_type(ui::external_app::epirb_rx::BeaconType type) {
+std::string format_beacon_type(BeaconType type) {
     switch (type) {
-        case ui::external_app::epirb_rx::BeaconType::OrbitingLocationBeacon: return "OLB";
-        case ui::external_app::epirb_rx::BeaconType::PersonalLocatorBeacon: return "PLB";
-        case ui::external_app::epirb_rx::BeaconType::EmergencyLocatorTransmitter: return "ELT";
-        case ui::external_app::epirb_rx::BeaconType::SerialELT: return "S-ELT";
-        case ui::external_app::epirb_rx::BeaconType::NationalELT: return "N-ELT";
+        case BeaconType::OrbitingLocationBeacon: return "OLB";
+        case BeaconType::PersonalLocatorBeacon: return "PLB";
+        case BeaconType::EmergencyLocatorTransmitter: return "ELT";
+        case BeaconType::SerialELT: return "S-ELT";
+        case BeaconType::NationalELT: return "N-ELT";
         default: return "Other";
     }
 }
 
-std::string format_emergency_type(ui::external_app::epirb_rx::EmergencyType type) {
+std::string format_emergency_type(EmergencyType type) {
     switch (type) {
-        case ui::external_app::epirb_rx::EmergencyType::Fire: return "Fire";
-        case ui::external_app::epirb_rx::EmergencyType::Flooding: return "Flooding";
-        case ui::external_app::epirb_rx::EmergencyType::Collision: return "Collision";
-        case ui::external_app::epirb_rx::EmergencyType::Grounding: return "Grounding";
-        case ui::external_app::epirb_rx::EmergencyType::Sinking: return "Sinking";
-        case ui::external_app::epirb_rx::EmergencyType::Disabled: return "Disabled";
-        case ui::external_app::epirb_rx::EmergencyType::Abandoning: return "Abandoning";
-        case ui::external_app::epirb_rx::EmergencyType::Piracy: return "Piracy";
-        case ui::external_app::epirb_rx::EmergencyType::Man_Overboard: return "MOB";
+        case EmergencyType::Fire: return "Fire";
+        case EmergencyType::Flooding: return "Flooding";
+        case EmergencyType::Collision: return "Collision";
+        case EmergencyType::Grounding: return "Grounding";
+        case EmergencyType::Sinking: return "Sinking";
+        case EmergencyType::Disabled: return "Disabled";
+        case EmergencyType::Abandoning: return "Abandoning";
+        case EmergencyType::Piracy: return "Piracy";
+        case EmergencyType::Man_Overboard: return "MOB";
         default: return "Other";
     }
 }
 
-EPIRBBeaconDetailView::EPIRBBeaconDetailView(NavigationView& nav) {
+EPIRBBeaconDetailView::EPIRBBeaconDetailView(ui::NavigationView& nav) {
     add_children({
         &button_done,
         &button_see_map
@@ -227,7 +224,7 @@ EPIRBBeaconDetailView::EPIRBBeaconDetailView(NavigationView& nav) {
     };
 }
 
-void EPIRBBeaconDetailView::set_beacon(const ui::external_app::epirb_rx::EPIRBBeacon& beacon) {
+void EPIRBBeaconDetailView::set_beacon(const EPIRBBeacon& beacon) {
     beacon_ = beacon;
     set_dirty();
 }
@@ -236,7 +233,7 @@ void EPIRBBeaconDetailView::focus() {
     button_see_map.focus();
 }
 
-void EPIRBBeaconDetailView::paint(Painter& painter) {
+void EPIRBBeaconDetailView::paint(ui::Painter& painter) {
     View::paint(painter);
 
     const auto rect = screen_rect();
@@ -272,22 +269,22 @@ void EPIRBBeaconDetailView::paint(Painter& painter) {
                            "Time", to_string_datetime(beacon_.timestamp, HMS)).location();
 }
 
-Rect EPIRBBeaconDetailView::draw_field(
-    Painter& painter,
-    const Rect& draw_rect,
-    const Style& style,
+ui::Rect EPIRBBeaconDetailView::draw_field(
+    ui::Painter& painter,
+    const ui::Rect& draw_rect,
+    const ui::Style& style,
     const std::string& label,
     const std::string& value
 ) {
     const auto label_width = 8 * 8;
 
     painter.draw_string({draw_rect.location()}, style, label + ":");
-    painter.draw_string({draw_rect.location() + Point{label_width, 0}}, style, value);
+    painter.draw_string({draw_rect.location() + ui::Point{label_width, 0}}, style, value);
 
-    return {draw_rect.location() + Point{0, draw_rect.height()}, draw_rect.size()};
+    return {draw_rect.location() + ui::Point{0, draw_rect.height()}, draw_rect.size()};
 }
 
-EPIRBAppView::EPIRBAppView(NavigationView& nav) : nav_(nav) {
+EPIRBAppView::EPIRBAppView(ui::NavigationView& nav) : nav_(nav) {
 /*    baseband::run_image(portapack::spi_flash::image_tag_epirb_rx); */
     baseband::run_prepared_image(portapack::memory::map::m4_code.base());
 
@@ -333,8 +330,6 @@ EPIRBAppView::EPIRBAppView(NavigationView& nav) : nav_(nav) {
     receiver_model.set_sampling_rate(2457600);
     receiver_model.enable();
 
-    audio::set_rate(audio::Rate::Hz_24000);
-    audio::output::start();
 
     logger = std::make_unique<EPIRBLogger>();
     if (logger) {
@@ -348,13 +343,12 @@ EPIRBAppView::~EPIRBAppView() {
     receiver_model.disable();
     baseband::shutdown();
 
-    audio::output::stop();
 }
 
-void EPIRBAppView::set_parent_rect(const Rect new_parent_rect) {
+void EPIRBAppView::set_parent_rect(const ui::Rect new_parent_rect) {
     View::set_parent_rect(new_parent_rect);
 
-    const auto console_rect = Rect{
+    const auto console_rect = ui::Rect{
         new_parent_rect.left(),
         new_parent_rect.top() + header_height,
         new_parent_rect.width(),
@@ -363,7 +357,7 @@ void EPIRBAppView::set_parent_rect(const Rect new_parent_rect) {
     console.set_parent_rect(console_rect);
 }
 
-void EPIRBAppView::paint(Painter& /* painter */) {
+void EPIRBAppView::paint(ui::Painter& /* painter */) {
     // Custom painting if needed
 }
 
@@ -373,14 +367,14 @@ void EPIRBAppView::focus() {
 
 void EPIRBAppView::on_packet(const baseband::Packet& packet) {
     // Decode the EPIRB packet
-    auto beacon = ui::external_app::epirb_rx::EPIRBDecoder::decode_packet(packet);
+    auto beacon = EPIRBDecoder::decode_packet(packet);
 
     if (beacon.beacon_id != 0) { // Valid beacon decoded
         on_beacon_decoded(beacon);
     }
 }
 
-void EPIRBAppView::on_beacon_decoded(const ui::external_app::epirb_rx::EPIRBBeacon& beacon) {
+void EPIRBAppView::on_beacon_decoded(const EPIRBBeacon& beacon) {
     beacons_received++;
     recent_beacons.push_back(beacon);
 
@@ -399,13 +393,11 @@ void EPIRBAppView::on_beacon_decoded(const ui::external_app::epirb_rx::EPIRBBeac
 
     // Display in console with full details
     std::string beacon_info = format_beacon_summary(beacon);
-    if (beacon.emergency_type != ui::external_app::epirb_rx::EmergencyType::Other) {
+    if (beacon.emergency_type != EmergencyType::Other) {
         beacon_info += " [" + format_emergency_type(beacon.emergency_type) + "]";
     }
     console.write(beacon_info + "\n");
 
-    // Audio feedback
-    baseband::request_audio_beep(1000, 24000, 100);
 }
 
 void EPIRBAppView::on_show_map() {
@@ -414,11 +406,11 @@ void EPIRBAppView::on_show_map() {
         for (auto it = recent_beacons.rbegin(); it != recent_beacons.rend(); ++it) {
             if (it->location.valid) {
                 // Create a GeoMapView with all beacon locations
-                auto map_view = nav_.push<GeoMapView>(
+                auto map_view = nav_.push<ui::GeoMapView>(
                     "EPIRB", // tag
                     0, // altitude
-                    GeoPos::alt_unit::METERS,
-                    GeoPos::spd_unit::NONE,
+                    ui::GeoPos::alt_unit::METERS,
+                    ui::GeoPos::spd_unit::NONE,
                     it->location.latitude,
                     it->location.longitude,
                     0 // angle
@@ -427,7 +419,7 @@ void EPIRBAppView::on_show_map() {
                 // Add all beacons with valid locations as markers
                 for (const auto& beacon : recent_beacons) {
                     if (beacon.location.valid) {
-                        GeoMarker marker;
+                        ui::GeoMarker marker;
                         marker.lat = beacon.location.latitude;
                         marker.lon = beacon.location.longitude;
                         marker.angle = 0;
@@ -481,7 +473,7 @@ void EPIRBAppView::update_display() {
     }
 }
 
-std::string EPIRBAppView::format_beacon_summary(const ui::external_app::epirb_rx::EPIRBBeacon& beacon) {
+std::string EPIRBAppView::format_beacon_summary(const EPIRBBeacon& beacon) {
     std::string summary = to_string_hex(beacon.beacon_id, 8) + " " +
                          format_beacon_type(beacon.beacon_type);
 
@@ -492,10 +484,10 @@ std::string EPIRBAppView::format_beacon_summary(const ui::external_app::epirb_rx
     return summary;
 }
 
-std::string EPIRBAppView::format_location(const ui::external_app::epirb_rx::EPIRBLocation& location) {
+std::string EPIRBAppView::format_location(const EPIRBLocation& location) {
     return to_string_decimal(location.latitude, 4) + "°," +
            to_string_decimal(location.longitude, 4) + "°";
 }
 
 
-} // namespace ui
+} // namespace ui::external_app::epirb_rx

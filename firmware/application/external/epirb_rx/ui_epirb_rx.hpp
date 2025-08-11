@@ -24,17 +24,19 @@
 
 #include "app_settings.hpp"
 #include "radio_state.hpp"
-#include "ui.hpp"
+#include "ui_widget.hpp"
 #include "ui_navigation.hpp"
 #include "ui_receiver.hpp"
 #include "ui_geomap.hpp"
 
-/* #include "event_m0.hpp" */
+#include "event_m0.hpp"
+#include "signal.hpp"
+#include "message.hpp"
 #include "log_file.hpp"
 
 
-/* #include "baseband_packet.hpp"
- */
+#include "baseband_packet.hpp"
+
 /* #include <cstdint>
 #include <cstddef>
 #include <string>
@@ -103,7 +105,7 @@ private:
     static std::string decode_vessel_name(const std::array<uint8_t, 16>& data);
 };
 
-} // namespace ui::external_app::epirb_rx
+
 
 class EPIRBLogger {
 public:
@@ -111,64 +113,62 @@ public:
         return log_file.append(filename);
     }
 
-    void on_packet(const ui::external_app::epirb_rx::EPIRBBeacon& beacon);
+    void on_packet(const EPIRBBeacon& beacon);
 
 private:
     LogFile log_file{};
 };
 
-namespace ui {
-
 // Forward declarations of formatting functions
-std::string format_beacon_type(ui::external_app::epirb_rx::BeaconType type);
-std::string format_emergency_type(ui::external_app::epirb_rx::EmergencyType type);
+std::string format_beacon_type(BeaconType type);
+std::string format_emergency_type(EmergencyType type);
 
-class EPIRBBeaconDetailView : public View {
+class EPIRBBeaconDetailView : public ui::View {
 public:
     std::function<void(void)> on_close{};
 
-    EPIRBBeaconDetailView(NavigationView& nav);
+    EPIRBBeaconDetailView(ui::NavigationView& nav);
     EPIRBBeaconDetailView(const EPIRBBeaconDetailView&) = delete;
     EPIRBBeaconDetailView& operator=(const EPIRBBeaconDetailView&) = delete;
 
-    void set_beacon(const ui::external_app::epirb_rx::EPIRBBeacon& beacon);
-    const ui::external_app::epirb_rx::EPIRBBeacon& beacon() const { return beacon_; }
+    void set_beacon(const EPIRBBeacon& beacon);
+    const EPIRBBeacon& beacon() const { return beacon_; }
 
     void focus() override;
-    void paint(Painter&) override;
+    void paint(ui::Painter&) override;
 
-    GeoMapView* get_geomap_view() { return geomap_view; }
+    ui::GeoMapView* get_geomap_view() { return geomap_view; }
 
 private:
-    ui::external_app::epirb_rx::EPIRBBeacon beacon_{};
+    EPIRBBeacon beacon_{};
 
-    Button button_done{
+    ui::Button button_done{
         {125, 224, 96, 24},
         "Done"
     };
-    Button button_see_map{
+    ui::Button button_see_map{
         {19, 224, 96, 24},
         "See on map"
     };
 
-    GeoMapView* geomap_view{nullptr};
+    ui::GeoMapView* geomap_view{nullptr};
 
-    Rect draw_field(
-        Painter& painter,
-        const Rect& draw_rect,
-        const Style& style,
+    ui::Rect draw_field(
+        ui::Painter& painter,
+        const ui::Rect& draw_rect,
+        const ui::Style& style,
         const std::string& label,
         const std::string& value
     );
 };
 
-class EPIRBAppView : public View {
+class EPIRBAppView : public ui::View {
 public:
-    EPIRBAppView(NavigationView& nav);
+    EPIRBAppView(ui::NavigationView& nav);
     ~EPIRBAppView();
 
-    void set_parent_rect(const Rect new_parent_rect) override;
-    void paint(Painter&) override;
+    void set_parent_rect(const ui::Rect new_parent_rect) override;
+    void paint(ui::Painter&) override;
     void focus() override;
 
     std::string title() const override { return "EPIRB RX"; }
@@ -178,82 +178,82 @@ private:
         "rx_epirb", app_settings::Mode::RX
     };
 
-    NavigationView& nav_;
+    ui::NavigationView& nav_;
 
-    std::vector<ui::external_app::epirb_rx::EPIRBBeacon> recent_beacons{};
+    std::vector<EPIRBBeacon> recent_beacons{};
     std::unique_ptr<EPIRBLogger> logger{};
 
     EPIRBBeaconDetailView beacon_detail_view{nav_};
 
     static constexpr auto header_height = 3 * 16;
 
-    Text label_frequency{
+    ui::Text label_frequency{
         {0 * 8, 0 * 16, 10 * 8, 1 * 16},
         "406.028 MHz"
     };
 
-    RFAmpField field_rf_amp{
+    ui::RFAmpField field_rf_amp{
         {13 * 8, 0 * 16}
     };
 
-    LNAGainField field_lna{
+    ui::LNAGainField field_lna{
         {15 * 8, 0 * 16}
     };
 
-    VGAGainField field_vga{
+    ui::VGAGainField field_vga{
         {18 * 8, 0 * 16}
     };
 
-    RSSI rssi{
+    ui::RSSI rssi{
         {21 * 8, 0, 6 * 8, 4}
     };
 
-    AudioVolumeField field_volume{
+    ui::AudioVolumeField field_volume{
         {screen_width - 2 * 8, 0 * 16}
     };
 
-    Channel channel{
+    ui::Channel channel{
         {21 * 8, 5, 6 * 8, 4}
     };
 
     // Status display
-    Text label_status{
+    ui::Text label_status{
         {0 * 8, 1 * 16, 15 * 8, 1 * 16},
         "Listening..."
     };
 
-    Text label_beacons_count{
+    ui::Text label_beacons_count{
         {16 * 8, 1 * 16, 14 * 8, 1 * 16},
         "Beacons: 0"
     };
 
     // Latest beacon info display
-    Text label_latest{
+    ui::Text label_latest{
         {0 * 8, 2 * 16, 8 * 8, 1 * 16},
         "Latest:"
     };
 
-    Text text_latest_info{
+    ui::Text text_latest_info{
         {8 * 8, 2 * 16, 22 * 8, 1 * 16},
         ""
     };
 
     // Beacon list
-    Console console{
+    ui::Console console{
         {0, 3 * 16, 240, 168}
     };
 
-    Button button_map{
+    ui::Button button_map{
         {0, 224, 60, 24},
         "Map"
     };
 
-    Button button_clear{
+    ui::Button button_clear{
         {64, 224, 60, 24},
         "Clear"
     };
 
-    Button button_log{
+    ui::Button button_log{
         {128, 224, 60, 24},
         "Log"
     };
@@ -270,17 +270,17 @@ private:
     };
 
     void on_packet(const baseband::Packet& packet);
-    void on_beacon_decoded(const ui::external_app::epirb_rx::EPIRBBeacon& beacon);
+    void on_beacon_decoded(const EPIRBBeacon& beacon);
     void on_show_map();
     void on_clear_beacons();
     void on_toggle_log();
     void on_tick_second();
 
     void update_display();
-    std::string format_beacon_summary(const ui::external_app::epirb_rx::EPIRBBeacon& beacon);
-    std::string format_location(const ui::external_app::epirb_rx::EPIRBLocation& location);
+    std::string format_beacon_summary(const EPIRBBeacon& beacon);
+    std::string format_location(const EPIRBLocation& location);
 };
 
-} // namespace ui
+} // namespace ui::external_app::epirb_rx
 
 #endif // __UI_EPIRB_RX_H__
