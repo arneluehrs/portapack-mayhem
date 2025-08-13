@@ -43,6 +43,19 @@
 
 namespace ui::external_app::epirb_rx {
 
+// EPIRB frequency channels
+struct EPIRBFrequency {
+    uint32_t frequency;
+    const char* label;
+};
+
+static constexpr std::array<EPIRBFrequency, 4> epirb_frequencies = {{
+    {406025000, "406.025 MHz"},  // COSPAS-SARSAT Primary
+    {406028000, "406.028 MHz"},  // COSPAS-SARSAT Secondary (default)
+    {406037000, "406.037 MHz"},  // COSPAS-SARSAT Tertiary
+    {144875000, "144.875 MHz"}   // Additional frequency
+}};
+
 // EPIRB 406 MHz beacon types
 enum class BeaconType : uint8_t {
     OrbitingLocationBeacon = 0,
@@ -180,27 +193,34 @@ class EPIRBAppView : public ui::View {
 
     static constexpr auto header_height = 3 * 16;
 
-    ui::Text label_frequency{
-        {0 * 8, 0 * 16, 10 * 8, 1 * 16},
-        "406.028 MHz"};
+    ui::OptionsField field_frequency{
+        {0 * 8, 0 * 16},
+        11,
+        {
+            {"406.025 MHz", 0},
+            {"406.028 MHz", 1},
+            {"406.037 MHz", 2},
+            {"144.875 MHz", 3}
+        }
+    };
 
     ui::RFAmpField field_rf_amp{
-        {13 * 8, 0 * 16}};
+        {12 * 8, 0 * 16}};
 
     ui::LNAGainField field_lna{
-        {15 * 8, 0 * 16}};
+        {14 * 8, 0 * 16}};
 
     ui::VGAGainField field_vga{
-        {18 * 8, 0 * 16}};
+        {17 * 8, 0 * 16}};
 
     ui::RSSI rssi{
-        {21 * 8, 0, 6 * 8, 4}};
+        {20 * 8, 0, 6 * 8, 4}};
 
     ui::AudioVolumeField field_volume{
         {screen_width - 2 * 8, 0 * 16}};
 
     ui::Channel channel{
-        {21 * 8, 5, 6 * 8, 4}};
+        {20 * 8, 5, 6 * 8, 4}};
 
     // Status display
     ui::Text label_status{
@@ -238,6 +258,7 @@ class EPIRBAppView : public ui::View {
 
     SignalToken signal_token_tick_second{};
     uint32_t beacons_received = 0;
+    size_t current_frequency_index = 1;  // Default to 406.028 MHz
 
     MessageHandlerRegistration message_handler_packet{
         Message::ID::EPIRBPacket,
@@ -251,6 +272,7 @@ class EPIRBAppView : public ui::View {
     void on_show_map();
     void on_clear_beacons();
     void on_toggle_log();
+    void on_frequency_changed(size_t index);
     void on_tick_second();
 
     void update_display();

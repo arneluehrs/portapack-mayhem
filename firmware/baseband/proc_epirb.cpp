@@ -86,6 +86,24 @@ void EPIRBProcessor::payload_handler(const baseband::Packet& packet) {
 }
 
 void EPIRBProcessor::on_message(const Message* const message) {
+    switch (message->id) {
+        case Message::ID::EPIRBConfigure: {
+            const auto& configure_message = static_cast<const EPIRBConfigureMessage&>(*message);
+            current_frequency = configure_message.frequency;
+            
+            // Reconfigure filters if needed for different frequency bands
+            if (configure_message.frequency < 200000000) {
+                // VHF band (144.875 MHz) - different filter configuration may be needed
+                // For now, keep same configuration but note frequency change
+            } else {
+                // UHF band (406 MHz) - standard configuration
+            }
+            
+            break;
+        }
+        default:
+            break;
+    }
 }
 
 int main() {

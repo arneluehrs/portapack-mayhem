@@ -136,6 +136,7 @@ class Message {
         NoaaAptRxImageData = 79,
         FSKPacket = 80,
         EPIRBPacket = 81,
+        EPIRBConfigure = 82,
         MAX
     };
 
@@ -349,6 +350,20 @@ class EPIRBPacketMessage : public Message {
     }
 
     baseband::Packet packet;
+};
+
+class EPIRBConfigureMessage : public Message {
+   public:
+    constexpr EPIRBConfigureMessage(
+        const uint32_t frequency,
+        const uint32_t sampling_rate)
+        : Message{ID::EPIRBConfigure},
+          frequency{frequency},
+          sampling_rate{sampling_rate} {
+    }
+
+    uint32_t frequency;
+    uint32_t sampling_rate;
 };
 
 class TPMSPacketMessage : public Message {

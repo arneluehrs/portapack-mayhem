@@ -21,6 +21,7 @@
 
 #include "baseband_api.hpp"
 #include "portapack_persistent_memory.hpp"
+#include "portapack_shared_memory.hpp"
 #include "file_path.hpp"
 
 #include "ui_epirb_rx.hpp"
@@ -317,7 +318,7 @@ EPIRBAppView::EPIRBAppView(ui::NavigationView& nav)
     : nav_(nav) {
     baseband::run_prepared_image(portapack::memory::map::m4_code.base());
 
-    add_children({&label_frequency,
+    add_children({&field_frequency,
                   &field_rf_amp,
                   &field_lna,
                   &field_vga,
@@ -345,17 +346,19 @@ EPIRBAppView::EPIRBAppView(ui::NavigationView& nav)
         this->on_toggle_log();
     };
 
+    field_frequency.on_change = [this](size_t index, int32_t) {
+        this->on_frequency_changed(index);
+    };
+
     signal_token_tick_second = rtc_time::signal_tick_second += [this]() {
         this->on_tick_second();
     };
 
-    // Configure receiver for 406.028 MHz EPIRB frequency
-    receiver_model.set_target_frequency(406028000);
-    receiver_model.set_rf_amp(true);
-    receiver_model.set_lna(32);
-    receiver_model.set_vga(32);
-    receiver_model.set_sampling_rate(2457600);
-    receiver_model.enable();
+    // Set default frequency (406.028 MHz)
+    field_frequency.set_selected_index(current_frequency_index);
+    
+    // Configure receiver with initial frequency
+    on_frequency_changed(current_frequency_index);
 
     logger = std::make_unique<EPIRBLogger>();
     if (logger) {
@@ -479,12 +482,42 @@ void EPIRBAppView::on_toggle_log() {
     }
 }
 
+void EPIRBAppView::on_frequency_changed(size_t index) {
+    if (index < epirb_frequencies.size()) {
+        current_frequency_index = index;
+        const auto& freq_info = epirb_frequencies[index];
+        
+        // Determine sampling rate based on frequency band
+        uint32_t sampling_rate;
+        if (freq_info.frequency < 200000000) {  // 144.875 MHz - VHF band
+            sampling_rate = 1000000;  // 1 MHz for VHF
+        } else {  // 406 MHz band - UHF
+            sampling_rate = 2457600;  // 2.4576 MHz for UHF
+        }
+        
+        // Configure receiver for new frequency
+        receiver_model.set_target_frequency(freq_info.frequency);
+        receiver_model.set_rf_amp(true);
+        receiver_model.set_lna(32);
+        receiver_model.set_vga(32);
+        receiver_model.set_sampling_rate(sampling_rate);
+        receiver_model.enable();
+        
+        // Send configuration message to baseband processor
+        baseband::set_epirb_config(freq_info.frequency, sampling_rate);
+        
+        // Clear existing beacons when frequency changes
+        on_clear_beacons();
+    }
+}
+
 void EPIRBAppView::on_tick_second() {
     // Update status display every second
     rtc::RTC datetime;
     rtcGetTime(&RTCD1, &datetime);
 
-    label_status.set("Listening... " + to_string_datetime(datetime, HM));
+    const auto& current_freq = epirb_frequencies[current_frequency_index];
+    label_status.set("Listening on " + std::string(current_freq.label) + " " + to_string_datetime(datetime, HM));
 }
 
 void EPIRBAppView::update_display() {

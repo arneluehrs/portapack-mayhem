@@ -350,6 +350,11 @@ void set_subghzd_config(uint8_t modulation = 0, uint32_t sampling_rate = 0) {
     send_message(&message);
 }
 
+void set_epirb_config(const uint32_t frequency, const uint32_t sampling_rate) {
+    const EPIRBConfigureMessage message{frequency, sampling_rate};
+    send_message(&message);
+}
+
 static bool baseband_image_running = false;
 
 void run_image(const spi_flash::image_tag_t image_tag) {

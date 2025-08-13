@@ -76,11 +76,13 @@ class EPIRBProcessor : public BasebandProcessor {
     void on_message(const Message* const message) override;
 
    private:
-    // EPIRB operates at 406 MHz with narrow bandwidth
+    // EPIRB operates at multiple frequencies with narrow bandwidth
     static constexpr size_t baseband_fs = 2457600;
-    static constexpr uint32_t epirb_center_freq = 406028000;  // 406.028 MHz
     static constexpr uint32_t symbol_rate = 400;              // 400 bps
     static constexpr size_t decimation_factor = 64;           // Decimate to ~38.4kHz
+    
+    // Current operating frequency (set via message)
+    uint32_t current_frequency = 406028000;  // Default: 406.028 MHz
 
     std::array<complex16_t, 512> dst{};
     const buffer_c16_t dst_buffer{
