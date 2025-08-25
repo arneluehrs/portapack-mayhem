@@ -107,20 +107,30 @@ class EPIRBProcessor : public BasebandProcessor {
 
     // EPIRB packet structure:
     // - Sync pattern: 000101010101... (15 bits)
-    // - Frame sync: 0111110 (7 bits)
-    // - Data: 112 bits
-    // - BCH error correction: 10 bits
-    // Total: 144 bits
+    // - Frame sync: 000101111 (9 bits, normal) or 011010000 (9 bits, test)  
+    // - Data: 112 bits (short format) or 144 bits (long format)
+    // - BCH error correction varies by format
+    // Total: 112 bits (short) or 144 bits (long)
     PacketBuilder<BitPattern, BitPattern, BitPattern> packet_builder{
         {0b010101010101010, 15, 1},  // Preamble pattern
-        {0b0111110, 7},              // Frame sync pattern
-        {0b0111110, 7},              // End pattern (same as sync for simplicity)
+        {0b000101111, 9},            // Normal frame sync pattern (bits 16-24)
+        {0b000101111, 9},            // End pattern (same as sync for consistency)
         [this](const baseband::Packet& packet) {
             this->payload_handler(packet);
+        }};
+    
+    // Test frame sync pattern builder for test beacons
+    PacketBuilder<BitPattern, BitPattern, BitPattern> test_packet_builder{
+        {0b010101010101010, 15, 1},  // Preamble pattern
+        {0b011010000, 9},            // Test frame sync pattern (bits 16-24)
+        {0b011010000, 9},            // End pattern (same as sync for consistency)
+        [this](const baseband::Packet& packet) {
+            this->test_payload_handler(packet);
         }};
 
     void consume_symbol(const float symbol);
     void payload_handler(const baseband::Packet& packet);
+    void test_payload_handler(const baseband::Packet& packet);
 
     // Statistics
     uint32_t packets_received = 0;

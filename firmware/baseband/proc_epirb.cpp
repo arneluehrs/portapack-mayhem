@@ -69,17 +69,34 @@ void EPIRBProcessor::consume_symbol(const float raw_symbol) {
     const auto decoded_symbol = sliced_symbol ^ last_symbol;
     last_symbol = sliced_symbol;
 
-    // Build packet from decoded symbols
+    // Build packet from decoded symbols - try both normal and test patterns
     packet_builder.execute(decoded_symbol);
+    test_packet_builder.execute(decoded_symbol);
 }
 
 void EPIRBProcessor::payload_handler(const baseband::Packet& packet) {
-    // EPIRB packet received - validate and process
-    if (packet.size() >= 112) {  // Minimum EPIRB data payload size (112 bits)
+    // Normal EPIRB packet received - validate and process
+    // Accept both short (112-bit) and long (144-bit) formats
+    if (packet.size() >= 112 && packet.size() <= 146) {  // Valid EPIRB message range
         packets_received++;
         last_packet_timestamp = Timestamp::now();
 
         // Create and send EPIRB packet message to application layer
+        const EPIRBPacketMessage message{packet};
+        shared_memory.application_queue.push(message);
+    }
+}
+
+void EPIRBProcessor::test_payload_handler(const baseband::Packet& packet) {
+    // Test EPIRB packet received - validate and process
+    // Accept both short (112-bit) and long (144-bit) test formats
+    if (packet.size() >= 112 && packet.size() <= 146) {  // Valid EPIRB message range
+        packets_received++;
+        last_packet_timestamp = Timestamp::now();
+
+        // Create and send test EPIRB packet message to application layer
+        // We'll use the same message type but the application layer will
+        // distinguish based on the frame sync pattern in the data
         const EPIRBPacketMessage message{packet};
         shared_memory.application_queue.push(message);
     }

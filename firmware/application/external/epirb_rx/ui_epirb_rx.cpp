@@ -39,11 +39,15 @@ EPIRBBeacon EPIRBDecoder::decode_packet(const baseband::Packet& packet) {
     EPIRBBeacon beacon;
 
     if (packet.size() < 112) {
-        return beacon;  // Invalid packet
+        return beacon;  // Invalid packet - too short
     }
 
+    // Determine message format based on packet length
+    beacon.message_format = decode_message_format(packet);
+
     // Convert packet bits to byte array for easier processing
-    std::array<uint8_t, 16> data{};
+    // Use 18 bytes to handle 144-bit long format (144/8 = 18 bytes)
+    std::array<uint8_t, 18> data{};
     for (size_t i = 0; i < std::min(packet.size() / 8, data.size()); i++) {
         uint8_t byte_val = 0;
         for (int bit = 0; bit < 8 && (i * 8 + bit) < packet.size(); bit++) {
@@ -73,6 +77,14 @@ EPIRBBeacon EPIRBDecoder::decode_packet(const baseband::Packet& packet) {
     uint8_t emergency_bits = (data[11] >> 4) & 0x0F;
     beacon.emergency_type = decode_emergency_type(emergency_bits);
 
+    // Determine transmission mode (test vs emergency)
+    // First check frame sync pattern (most reliable method)
+    beacon.transmission_mode = decode_frame_sync_pattern(packet);
+    // If frame sync analysis is inconclusive, fall back to data pattern analysis
+    if (beacon.transmission_mode == TransmissionMode::Unknown) {
+        beacon.transmission_mode = decode_transmission_mode(data);
+    }
+
     // Extract location if encoded (depends on beacon type and protocol)
     beacon.location = decode_location(data);
 
@@ -87,7 +99,7 @@ EPIRBBeacon EPIRBDecoder::decode_packet(const baseband::Packet& packet) {
     return beacon;
 }
 
-EPIRBLocation EPIRBDecoder::decode_location(const std::array<uint8_t, 16>& data) {
+EPIRBLocation EPIRBDecoder::decode_location(const std::array<uint8_t, 18>& data) {
     // EPIRB location encoding varies by protocol version
     // This is a simplified decoder for the most common format
 
@@ -156,20 +168,150 @@ EmergencyType EPIRBDecoder::decode_emergency_type(uint8_t emergency_bits) {
     }
 }
 
-uint32_t EPIRBDecoder::decode_country_code(const std::array<uint8_t, 16>& data) {
+uint32_t EPIRBDecoder::decode_country_code(const std::array<uint8_t, 18>& data) {
     // Country code is in bits 1-10 (ITU country code)
     return ((data[0] & 0x03) << 8) | data[1];
 }
 
-std::string EPIRBDecoder::decode_vessel_name(const std::array<uint8_t, 16>& /* data */) {
+std::string EPIRBDecoder::decode_vessel_name(const std::array<uint8_t, 18>& /* data */) {
     // Vessel name extraction depends on beacon type and protocol
     // This is a placeholder - actual implementation would be more complex
     return "";
 }
 
-PacketStatus EPIRBDecoder::perform_bch_check(std::array<uint8_t, 16>& data, uint8_t& error_count) {
+TransmissionMode EPIRBDecoder::decode_transmission_mode(const std::array<uint8_t, 18>& data) {
+    // EPIRB 406 MHz protocol test mode detection:
+    // Test beacons can be identified by specific patterns in the message
+    
+    // Method 1: Check for test flag in user protocol field (bit 89-90)
+    // In many EPIRB implementations, bits 89-90 contain test mode indicators
+    uint8_t protocol_bits = (data[11] >> 1) & 0x03;
+    if (protocol_bits == 0x03) {
+        return TransmissionMode::Test;  // Pattern 11 often indicates test mode
+    }
+    
+    // Method 2: Check for specific test patterns in the message data
+    // Test beacons may use specific test ID patterns or reserved values
+    // Check for test pattern in beacon ID (MSB set or specific ranges)
+    uint64_t beacon_id = 0;
+    for (int i = 3; i < 11; i++) {
+        beacon_id = (beacon_id << 8) | data[i];
+    }
+    
+    // Test beacons often use ID ranges reserved for testing
+    // Common test patterns: 0xFFF... or specific manufacturer test ranges
+    if ((beacon_id & 0xFF00000000000000ULL) == 0xFF00000000000000ULL) {
+        return TransmissionMode::Test;
+    }
+    
+    // Method 3: Check for self-test indicator in emergency type field
+    // Some implementations use emergency type 15 (Other) combined with specific patterns for test
+    uint8_t emergency_bits = (data[11] >> 4) & 0x0F;
+    if (emergency_bits == 15) {
+        // Check additional context - if combined with certain beacon types, may indicate test
+        uint8_t type_bits = (data[10] >> 5) & 0x07;
+        if (type_bits == 7) {  // Reserved beacon type often used for test
+            return TransmissionMode::Test;
+        }
+    }
+    
+    // Method 4: Check for repeating patterns that might indicate test transmission
+    // Test beacons sometimes transmit with specific repeating data patterns
+    bool has_test_pattern = true;
+    for (int i = 1; i < 8; i++) {
+        if (data[i] != data[0]) {
+            has_test_pattern = false;
+            break;
+        }
+    }
+    if (has_test_pattern && (data[0] == 0x00 || data[0] == 0xFF || data[0] == 0xAA || data[0] == 0x55)) {
+        return TransmissionMode::Test;
+    }
+    
+    // Default to emergency mode if no test indicators found
+    return TransmissionMode::Emergency;
+}
+
+TransmissionMode EPIRBDecoder::decode_frame_sync_pattern(const baseband::Packet& packet) {
+    // Frame sync patterns are located at bit positions 16-24 (9 bits)
+    // Normal frame sync: 000101111 (0x2F when aligned to byte boundary)  
+    // Test frame sync:   011010000 (0xD0 when aligned to byte boundary)
+    
+    if (packet.size() < 32) {
+        return TransmissionMode::Unknown;  // Not enough data to analyze frame sync
+    }
+    
+    // Extract 9 bits starting from bit position 16
+    // Bit 16 is in byte 2, bit 0 (16 ÷ 8 = 2, remainder 0)
+    uint16_t frame_sync_bits = 0;
+    
+    // Extract bits 16-24 from the packet
+    for (int i = 0; i < 9; i++) {
+        size_t bit_pos = 16 + i;
+        if (bit_pos < packet.size() && packet[bit_pos]) {
+            frame_sync_bits |= (1 << (8 - i));  // MSB first
+        }
+    }
+    
+    // Check for normal frame sync pattern: 000101111 (binary) = 0x2F
+    if (frame_sync_bits == 0b000101111) {
+        return TransmissionMode::Emergency;
+    }
+    
+    // Check for test frame sync pattern: 011010000 (binary) = 0xD0  
+    if (frame_sync_bits == 0b011010000) {
+        return TransmissionMode::Test;
+    }
+    
+    // Check for patterns with 1-2 bit errors (common in noisy conditions)
+    // Count bit differences from expected patterns
+    uint16_t normal_pattern = 0b000101111;
+    uint16_t test_pattern = 0b011010000;
+    
+    int normal_diff = __builtin_popcount(frame_sync_bits ^ normal_pattern);
+    int test_diff = __builtin_popcount(frame_sync_bits ^ test_pattern);
+    
+    // If one pattern is much closer, use it (allow up to 2 bit errors)
+    if (normal_diff <= 2 && normal_diff < test_diff) {
+        return TransmissionMode::Emergency;
+    } else if (test_diff <= 2 && test_diff < normal_diff) {
+        return TransmissionMode::Test;
+    }
+    
+    // Frame sync pattern is ambiguous or corrupted
+    return TransmissionMode::Unknown;
+}
+
+MessageFormat EPIRBDecoder::decode_message_format(const baseband::Packet& packet) {
+    // EPIRB message format detection based on packet length:
+    // - Short format: 112 bits (87 information bits + 25 sync/error correction)
+    // - Long format: 144 bits (119 information bits + 25 sync/error correction)
+    
+    size_t packet_bits = packet.size();
+    
+    // Allow for some tolerance in packet length due to timing variations
+    if (packet_bits >= 110 && packet_bits <= 114) {
+        return MessageFormat::Short;
+    } else if (packet_bits >= 142 && packet_bits <= 146) {
+        return MessageFormat::Long;
+    }
+    
+    // For ambiguous lengths, check if we can determine format from content
+    // Long format messages have additional supplementary data in bits 113-144
+    if (packet_bits > 120) {
+        // Likely long format if significantly longer than 112 bits
+        return MessageFormat::Long;
+    } else if (packet_bits > 100) {
+        // Likely short format if around 112 bits
+        return MessageFormat::Short;
+    }
+    
+    return MessageFormat::Unknown;
+}
+
+PacketStatus EPIRBDecoder::perform_bch_check(std::array<uint8_t, 18>& data, uint8_t& error_count) {
     // Make a copy to detect changes
-    std::array<uint8_t, 16> original_data = data;
+    std::array<uint8_t, 18> original_data = data;
 
     // Calculate BCH syndrome
     uint32_t syndrome = calculate_bch_syndrome(data);
@@ -192,14 +334,14 @@ PacketStatus EPIRBDecoder::perform_bch_check(std::array<uint8_t, 16>& data, uint
     return PacketStatus::Error;
 }
 
-uint32_t EPIRBDecoder::calculate_bch_syndrome(const std::array<uint8_t, 16>& data) {
+uint32_t EPIRBDecoder::calculate_bch_syndrome(const std::array<uint8_t, 18>& data) {
     // BCH(127,92,5) polynomial for EPIRB: x^35 + x^2 + x + 1
     // This is a simplified implementation - actual EPIRB uses BCH(63,21,6)
     uint32_t syndrome = 0;
     uint32_t polynomial = 0x80000007;  // x^31 + x^2 + x + 1 (simplified)
 
-    // Process each byte of the data
-    for (int i = 0; i < 14; i++) {  // Only data bits, not parity
+    // Process each byte of the data (adjust for message format)
+    for (int i = 0; i < 16; i++) {  // Process up to 16 bytes for long format
         uint32_t byte_val = data[i];
         for (int bit = 7; bit >= 0; bit--) {
             syndrome <<= 1;
@@ -214,13 +356,13 @@ uint32_t EPIRBDecoder::calculate_bch_syndrome(const std::array<uint8_t, 16>& dat
         }
     }
 
-    // XOR with parity bits
-    syndrome ^= (data[14] << 8) | data[15];
+    // XOR with parity bits (adjust for message format)
+    syndrome ^= (data[16] << 8) | data[17];
 
     return syndrome & 0xFFFF;  // 16-bit syndrome
 }
 
-bool EPIRBDecoder::correct_single_error(std::array<uint8_t, 16>& data, uint32_t syndrome) {
+bool EPIRBDecoder::correct_single_error(std::array<uint8_t, 18>& data, uint32_t syndrome) {
     // Simplified single-error correction
     // This is a basic implementation - real BCH correction is more complex
 
@@ -228,10 +370,10 @@ bool EPIRBDecoder::correct_single_error(std::array<uint8_t, 16>& data, uint32_t 
 
     // Look up table for single-bit error patterns (simplified)
     // In a real implementation, this would be a proper BCH syndrome table
-    for (int byte_idx = 0; byte_idx < 14; byte_idx++) {
+    for (int byte_idx = 0; byte_idx < 16; byte_idx++) {
         for (int bit_idx = 0; bit_idx < 8; bit_idx++) {
             // Create test error pattern
-            std::array<uint8_t, 16> test_data = data;
+            std::array<uint8_t, 18> test_data = data;
             test_data[byte_idx] ^= (1 << bit_idx);
 
             // Check if this correction produces zero syndrome
@@ -246,9 +388,9 @@ bool EPIRBDecoder::correct_single_error(std::array<uint8_t, 16>& data, uint32_t 
     return false;  // Could not correct
 }
 
-uint8_t EPIRBDecoder::count_bit_errors(const std::array<uint8_t, 16>& original, const std::array<uint8_t, 16>& corrected) {
+uint8_t EPIRBDecoder::count_bit_errors(const std::array<uint8_t, 18>& original, const std::array<uint8_t, 18>& corrected) {
     uint8_t count = 0;
-    for (size_t i = 0; i < 16; i++) {
+    for (size_t i = 0; i < 18; i++) {
         uint8_t diff = original[i] ^ corrected[i];
         // Count set bits in diff
         while (diff) {
@@ -263,7 +405,9 @@ void EPIRBLogger::on_packet(const EPIRBBeacon& beacon) {
     std::string entry = "EPIRB," +
                         to_string_dec_uint(beacon.beacon_id, 15, '0') + "," +
                         to_string_dec_uint(static_cast<uint8_t>(beacon.beacon_type)) + "," +
-                        to_string_dec_uint(static_cast<uint8_t>(beacon.emergency_type)) + ",";
+                        to_string_dec_uint(static_cast<uint8_t>(beacon.emergency_type)) + "," +
+                        format_transmission_mode(beacon.transmission_mode) + "," +
+                        format_message_format(beacon.message_format) + ",";
 
     if (beacon.location.valid) {
         entry += to_string_decimal(beacon.location.latitude, 6) + "," +
@@ -321,6 +465,28 @@ std::string format_emergency_type(EmergencyType type) {
     }
 }
 
+std::string format_transmission_mode(TransmissionMode mode) {
+    switch (mode) {
+        case TransmissionMode::Emergency:
+            return "EMERGENCY";
+        case TransmissionMode::Test:
+            return "TEST";
+        default:
+            return "UNKNOWN";
+    }
+}
+
+std::string format_message_format(MessageFormat format) {
+    switch (format) {
+        case MessageFormat::Short:
+            return "SHORT (112-bit)";
+        case MessageFormat::Long:
+            return "LONG (144-bit)";
+        default:
+            return "UNKNOWN";
+    }
+}
+
 std::string format_packet_status(PacketStatus status) {
     switch (status) {
         case PacketStatus::Valid:
@@ -342,6 +508,17 @@ ui::Color get_packet_status_color(PacketStatus status) {
             return ui::Color::yellow();
         case PacketStatus::Error:
             return ui::Color::red();
+        default:
+            return ui::Color::white();
+    }
+}
+
+ui::Color get_transmission_mode_color(TransmissionMode mode) {
+    switch (mode) {
+        case TransmissionMode::Emergency:
+            return ui::Color::red();
+        case TransmissionMode::Test:
+            return ui::Color::blue();
         default:
             return ui::Color::white();
     }
@@ -400,6 +577,19 @@ void EPIRBBeaconDetailView::paint(ui::Painter& painter) {
 
     draw_cursor = draw_field(painter, {draw_cursor, {200, 16}}, s,
                              "Emergency", format_emergency_type(beacon_.emergency_type))
+                      .location();
+
+    // Show transmission mode with appropriate color
+    std::string mode_text = format_transmission_mode(beacon_.transmission_mode);
+    ui::Color mode_color = get_transmission_mode_color(beacon_.transmission_mode);
+    ui::Style mode_style{s.font, s.background, mode_color};
+    draw_cursor = draw_field(painter, {draw_cursor, {200, 16}}, mode_style,
+                             "Mode", mode_text)
+                      .location();
+
+    // Show message format
+    draw_cursor = draw_field(painter, {draw_cursor, {200, 16}}, s,
+                             "Format", format_message_format(beacon_.message_format))
                       .location();
 
     if (beacon_.location.valid) {
@@ -576,6 +766,24 @@ void EPIRBAppView::on_beacon_decoded(const EPIRBBeacon& beacon) {
     if (beacon.emergency_type != EmergencyType::Other) {
         beacon_info += " [" + format_emergency_type(beacon.emergency_type) + "]";
     }
+    
+    // Add transmission mode indicator with color
+    std::string mode_color;
+    switch (beacon.transmission_mode) {
+        case TransmissionMode::Emergency:
+            mode_color = STR_COLOR_RED;
+            break;
+        case TransmissionMode::Test:
+            mode_color = STR_COLOR_BLUE;
+            break;
+        default:
+            mode_color = STR_COLOR_WHITE;
+            break;
+    }
+    beacon_info += " [" + mode_color + format_transmission_mode(beacon.transmission_mode) + STR_COLOR_WHITE + "]";
+    
+    // Add message format indicator  
+    beacon_info += " [" + format_message_format(beacon.message_format) + "]";
 
     // Add colored status indicator
     std::string status_color;

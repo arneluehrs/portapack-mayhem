@@ -67,6 +67,20 @@ enum class EmergencyType : uint8_t {
     Other = 15
 };
 
+// EPIRB transmission modes
+enum class TransmissionMode : uint8_t {
+    Emergency = 0,
+    Test = 1,
+    Unknown = 2
+};
+
+// EPIRB message formats
+enum class MessageFormat : uint8_t {
+    Short = 0,   // 112-bit message (87 information bits + 25 sync/error correction)
+    Long = 1,    // 144-bit message (119 information bits + 25 sync/error correction)
+    Unknown = 2
+};
+
 struct EPIRBLocation {
     float latitude;   // degrees, -90 to +90
     float longitude;  // degrees, -180 to +180
@@ -88,6 +102,8 @@ struct EPIRBBeacon {
     uint32_t beacon_id;
     BeaconType beacon_type;
     EmergencyType emergency_type;
+    TransmissionMode transmission_mode;
+    MessageFormat message_format;
     EPIRBLocation location;
     uint32_t country_code;
     std::string vessel_name;
@@ -97,7 +113,7 @@ struct EPIRBBeacon {
     uint8_t error_count;
 
     EPIRBBeacon()
-        : beacon_id(0), beacon_type(BeaconType::Other), emergency_type(EmergencyType::Other), location(), country_code(0), vessel_name(), timestamp(), sequence_number(0), packet_status(PacketStatus::Error), error_count(0) {}
+        : beacon_id(0), beacon_type(BeaconType::Other), emergency_type(EmergencyType::Other), transmission_mode(TransmissionMode::Unknown), message_format(MessageFormat::Unknown), location(), country_code(0), vessel_name(), timestamp(), sequence_number(0), packet_status(PacketStatus::Error), error_count(0) {}
 };
 
 class EPIRBDecoder {
@@ -105,17 +121,20 @@ class EPIRBDecoder {
     static EPIRBBeacon decode_packet(const baseband::Packet& packet);
 
    private:
-    static EPIRBLocation decode_location(const std::array<uint8_t, 16>& data);
+    static EPIRBLocation decode_location(const std::array<uint8_t, 18>& data);
     static BeaconType decode_beacon_type(uint8_t type_bits);
     static EmergencyType decode_emergency_type(uint8_t emergency_bits);
-    static uint32_t decode_country_code(const std::array<uint8_t, 16>& data);
-    static std::string decode_vessel_name(const std::array<uint8_t, 16>& data);
+    static TransmissionMode decode_transmission_mode(const std::array<uint8_t, 18>& data);
+    static TransmissionMode decode_frame_sync_pattern(const baseband::Packet& packet);
+    static MessageFormat decode_message_format(const baseband::Packet& packet);
+    static uint32_t decode_country_code(const std::array<uint8_t, 18>& data);
+    static std::string decode_vessel_name(const std::array<uint8_t, 18>& data);
 
     // BCH error correction methods
-    static PacketStatus perform_bch_check(std::array<uint8_t, 16>& data, uint8_t& error_count);
-    static uint32_t calculate_bch_syndrome(const std::array<uint8_t, 16>& data);
-    static bool correct_single_error(std::array<uint8_t, 16>& data, uint32_t syndrome);
-    static uint8_t count_bit_errors(const std::array<uint8_t, 16>& original, const std::array<uint8_t, 16>& corrected);
+    static PacketStatus perform_bch_check(std::array<uint8_t, 18>& data, uint8_t& error_count);
+    static uint32_t calculate_bch_syndrome(const std::array<uint8_t, 18>& data);
+    static bool correct_single_error(std::array<uint8_t, 18>& data, uint32_t syndrome);
+    static uint8_t count_bit_errors(const std::array<uint8_t, 18>& original, const std::array<uint8_t, 18>& corrected);
 };
 
 class EPIRBLogger {
@@ -133,8 +152,11 @@ class EPIRBLogger {
 // Forward declarations of formatting functions
 std::string format_beacon_type(BeaconType type);
 std::string format_emergency_type(EmergencyType type);
+std::string format_transmission_mode(TransmissionMode mode);
+std::string format_message_format(MessageFormat format);
 std::string format_packet_status(PacketStatus status);
 ui::Color get_packet_status_color(PacketStatus status);
+ui::Color get_transmission_mode_color(TransmissionMode mode);
 
 class EPIRBBeaconDetailView : public ui::View {
    public:
